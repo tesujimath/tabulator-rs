@@ -268,6 +268,36 @@ D    E1 F999"#)]
         assert_eq!(result, expected);
     }
 
+    #[test_case(vec![
+        vec!["A123", "B", "C1" ],
+        vec!["D", "E1", "F999" ],
+    ], r#"A123  B   C1
+   D E1 F999"#)]
+    fn right_justified_strings(rows: Vec<Vec<&str>>, expected: &str) {
+        let cell = Column(
+            rows.iter()
+                .map(|row| Row(row.iter().map(|s| Right(Borrowed(*s))).collect::<Vec<_>>()))
+                .collect::<Vec<_>>(),
+        );
+        let result = cell.to_string();
+        assert_eq!(result, expected);
+    }
+
+    #[test_case(vec![
+        vec!["A123", "B", "C1" ],
+        vec!["D", "E1", "F999" ],
+    ], r#"A123 B   C1 
+ D   E1 F999"#)]
+    fn centred_strings(rows: Vec<Vec<&str>>, expected: &str) {
+        let cell = Column(
+            rows.iter()
+                .map(|row| Row(row.iter().map(|s| Centre(Borrowed(*s))).collect::<Vec<_>>()))
+                .collect::<Vec<_>>(),
+        );
+        let result = cell.to_string();
+        assert_eq!(result, expected);
+    }
+
     #[test_case(Row(vec![Left(Borrowed("A")), Left(Borrowed("B"))]), r#"A|B"#)]
     fn styled(cell: Cell, expected: &str) {
         let pipe = Style::with_column_separator("|");
