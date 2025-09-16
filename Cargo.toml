@@ -1,0 +1,14 @@
+[package]
+name = "tabulator"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Grid-oriented tabulation with justification and anchors"
+homepage = "https://github.com/tesujimath/tabulator"
+repository = "https://github.com/tesujimath/tabulator"
+readme = "README.md"
+
+[dependencies]
+joinery = "3.1.0"
+lazy_format = "2.0.3"
+test-case = "3.3.1"
