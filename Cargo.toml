@@ -9,6 +9,7 @@ repository = "https://github.com/tesujimath/tabulator"
 readme = "README.md"
 
 [dependencies]
-joinery = "3.1.0"
+itertools = "0.14.0"
 lazy_format = "2.0.3"
 test-case = "3.3.1"
+unicode-width = "0.2.1"
