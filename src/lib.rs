@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use joinery::Joinable;
 use lazy_format::make_lazy_format;
 use std::{
     cmp::max,
@@ -14,6 +15,12 @@ pub enum Cell<'a> {
     Anchor(Cow<'a, str>, usize),
     Row(Vec<Cell<'a>>),
     Column(Vec<Cell<'a>>),
+}
+
+impl<'a> Cell<'a> {
+    fn empty() -> Self {
+        Cell::Left(Cow::Borrowed(""))
+    }
 }
 
 #[derive(Debug)]
@@ -79,10 +86,11 @@ impl<'a> Cell<'a> {
                 use itertools::EitherOrBoth::*;
 
                 let mut sep = false;
+                let empty_cell = Cell::empty();
                 for (cell, spec) in cells.iter().zip_longest(spec).map(|x| match x {
                     Both(cell, spec) => (cell, spec),
                     Left(cell) => todo!("cell without spec"),
-                    Right(spec) => todo!("spec without cell"),
+                    Right(spec) => (&empty_cell, spec),
                 }) {
                     if sep {
                         write!(f, "{}", &style.column_separator)?
@@ -280,6 +288,32 @@ D    E1 F999"#)]
                 .collect::<Vec<_>>(),
         );
         let result = cell.to_string();
+        assert_eq!(result, expected);
+    }
+
+    #[test_case(vec![
+        Vec::default(),
+        vec!["A123", "B", "C1" ],
+        Vec::default(),
+        vec!["D", "E1", "F999" ],
+        vec!["G", "H" ],
+        Vec::default(),
+    ], vec![
+        "            ",
+        "A123  B   C1",
+        "            ",
+        "   D E1 F999",
+        "   G  H     ",
+        "            "]
+)]
+    fn empty_lines_space_filled(rows: Vec<Vec<&str>>, expected_lines: Vec<&str>) {
+        let cell = Column(
+            rows.iter()
+                .map(|row| Row(row.iter().map(|s| Right(Borrowed(*s))).collect::<Vec<_>>()))
+                .collect::<Vec<_>>(),
+        );
+        let result = cell.to_string();
+        let expected = expected_lines.join_with("\n").to_string();
         assert_eq!(result, expected);
     }
 
