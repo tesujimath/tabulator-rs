@@ -12,7 +12,7 @@ pub enum Cell<'a> {
     Left(Cow<'a, str>),
     Right(Cow<'a, str>),
     Centre(Cow<'a, str>),
-    Anchor(Cow<'a, str>, usize),
+    Anchor(Cow<'a, str>, usize), // index of character which is anchored, e.g. the decimal point
     Row(Vec<Cell<'a>>),
     Column(Vec<Cell<'a>>),
 }
@@ -81,7 +81,13 @@ impl<'a> Cell<'a> {
                 let pad_r = pad_w - pad_l;
                 write!(f, "{}{}{}", pad(pad_l), s, pad(pad_r))
             }
-            (Anchor(_s, _a), spec) => todo!("anchor not yet implemented"),
+            (Anchor(s, idx), spec) => {
+                let (spec_idx, spec_trailing) = spec.anchor();
+                let trailing = s.width() - idx;
+                let pad_l = spec_idx - idx;
+                let pad_r = spec_trailing - trailing;
+                write!(f, "{}{}{}", pad(pad_l), s, pad(pad_r))
+            }
             (Row(cells), Composite(spec)) => {
                 use itertools::EitherOrBoth::*;
 
@@ -145,10 +151,10 @@ impl SimpleColSpec {
         }
     }
 
-    fn from_anchor(left: usize, right: usize) -> Self {
+    fn from_anchor(idx: usize, trailing: usize) -> Self {
         Self {
             width: None,
-            anchor: Some((left, right)),
+            anchor: Some((idx, trailing)),
         }
     }
 
@@ -156,13 +162,18 @@ impl SimpleColSpec {
         max(
             self.width.unwrap_or(0),
             self.anchor
-                .map(|(left, right)| left + right + 1)
+                .map(|(idx, trailing)| idx + trailing)
                 .unwrap_or(0),
         )
     }
 
-    fn anchor(&self) -> Option<(usize, usize)> {
-        self.anchor
+    fn anchor(&self) -> (usize, usize) {
+        // anchor is expanded on the left to match the width
+        let width = self.width.unwrap_or(0);
+        self.anchor.map_or((width, 0), |(idx, trailing)| {
+            let expanded_idx = max(width, idx + trailing) - trailing;
+            (expanded_idx, trailing)
+        })
     }
 
     fn merge(self, other: SimpleColSpec) -> Self {
@@ -173,8 +184,8 @@ impl SimpleColSpec {
         };
 
         let anchor = match (self.anchor, other.anchor) {
-            (Some((left0, right0)), Some((left1, right1))) => {
-                Some((max(left0, left1), max(right0, right1)))
+            (Some((idx0, trailing0)), Some((idx1, trailing1))) => {
+                Some((max(idx0, idx1), max(trailing0, trailing1)))
             }
             (a0, None) => a0,
             (None, a1) => a1,
@@ -224,6 +235,20 @@ impl ColSpec {
             Composite(c0) => c0.iter().map(|c| c.width()).sum(),
         }
     }
+
+    fn anchor(&self) -> (usize, usize) {
+        use ColSpec::*;
+
+        match self {
+            Empty => (0, 0),
+            Simple(s0) => s0.anchor(),
+            Composite(cs) => {
+                let (idx0, trailing0) = cs.first().map(|c| c.anchor()).unwrap_or((0, 0));
+                let remaining_width = cs.iter().skip(1).map(|c| c.width()).sum::<usize>();
+                (idx0, trailing0 + remaining_width)
+            }
+        }
+    }
 }
 
 impl<'a> From<&Cell<'a>> for ColSpec {
@@ -235,9 +260,9 @@ impl<'a> From<&Cell<'a>> for ColSpec {
             Left(s) => Simple(SimpleColSpec::from_width(s.width())),
             Right(s) => Simple(SimpleColSpec::from_width(s.width())),
             Centre(s) => Simple(SimpleColSpec::from_width(s.width())),
-            Anchor(s, anchor) => {
+            Anchor(s, idx) => {
                 let w = s.width();
-                Simple(SimpleColSpec::from_anchor(*anchor, w - anchor))
+                Simple(SimpleColSpec::from_anchor(*idx, w - idx))
             }
             Row(cells) => Composite(cells.iter().map(Into::<ColSpec>::into).collect::<Vec<_>>()),
             Column(cells) => cells
@@ -304,7 +329,8 @@ D    E1 F999"#)]
         "            ",
         "   D E1 F999",
         "   G  H     ",
-        "            "]
+        "            ",
+    ]
 )]
     fn empty_lines_space_filled(rows: Vec<Vec<&str>>, expected_lines: Vec<&str>) {
         let cell = Column(
@@ -314,7 +340,7 @@ D    E1 F999"#)]
         );
         let result = cell.to_string();
         let expected = expected_lines.join_with("\n").to_string();
-        assert_eq!(result, expected);
+        assert_eq!(&result, &expected);
     }
 
     #[test_case(vec![
@@ -337,5 +363,19 @@ D    E1 F999"#)]
         let pipe = Style::with_column_separator("|");
         let result = cell.styled(&pipe).to_string();
         assert_eq!(&result, expected);
+    }
+
+    #[test_case(Column(vec![
+        Row(vec![Left(Borrowed("A")), Anchor(Borrowed("1.25"), 1), Right(Borrowed("A99"))]),
+        Row(vec![Left(Borrowed("B1")), Anchor(Borrowed("12.2"), 2), Right(Borrowed("B"))]),
+    ]), vec![
+        "A   1.25 A99",
+        "B1 12.2    B",
+        ]
+)]
+    fn anchored(cell: Cell, expected_lines: Vec<&str>) {
+        let result = cell.to_string();
+        let expected = expected_lines.join_with("\n").to_string();
+        assert_eq!(&result, &expected);
     }
 }
