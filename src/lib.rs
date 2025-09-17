@@ -24,78 +24,75 @@ impl<'a> Cell<'a> {
 }
 
 #[derive(Debug)]
-pub struct Style<S> {
-    column_separator: S,
+pub struct Style<'a> {
+    column_separator: Cow<'a, str>,
 }
 
-impl Default for Style<&str> {
+impl<'a> Default for Style<'a> {
     fn default() -> Self {
         Self {
-            column_separator: " ",
+            column_separator: Cow::Borrowed(" "),
         }
     }
 }
 
-impl<S> Style<S> {
-    pub fn with_column_separator(sep: S) -> Self {
-        Self {
-            column_separator: sep,
-        }
+impl<'a> Style<'a> {
+    pub fn with_column_separator(column_separator: Cow<'a, str>) -> Self {
+        Self { column_separator }
+    }
+
+    fn column_separator_width(&self) -> usize {
+        self.column_separator.as_ref().len()
     }
 }
 
 impl<'a> Cell<'a> {
-    pub fn styled<S>(&self, style: &Style<S>) -> impl Display
-    where
-        S: Display,
-    {
+    pub fn styled<'s>(&self, style: &Style<'s>) -> impl Display {
         let spec: ColSpec = self.into();
 
         make_lazy_format!(|f| self.format(f, style, &spec))
     }
 
-    fn format<S>(
+    fn format<'s>(
         &self,
         f: &mut std::fmt::Formatter<'_>,
-        style: &Style<S>,
+        style: &Style<'s>,
         spec: &ColSpec,
-    ) -> std::fmt::Result
-    where
-        S: Display,
-    {
+    ) -> std::fmt::Result {
         use Cell::*;
         use ColSpec::*;
 
+        let spec_width = spec.width(style.column_separator_width());
         match (self, spec) {
-            (Left(s), spec) => {
-                let pad_w = spec.width() - s.width();
+            (Left(s), _spec) => {
+                let pad_w = spec_width - s.width();
                 write!(f, "{}{}", s, pad(pad_w))
             }
-            (Right(s), spec) => {
-                let pad_w = spec.width() - s.width();
+            (Right(s), _spec) => {
+                let pad_w = spec_width - s.width();
                 write!(f, "{}{}", pad(pad_w), s)
             }
-            (Centre(s), spec) => {
-                let pad_w = spec.width() - s.width();
+            (Centre(s), _spec) => {
+                let pad_w = spec_width - s.width();
                 let pad_l = pad_w / 2;
                 let pad_r = pad_w - pad_l;
                 write!(f, "{}{}{}", pad(pad_l), s, pad(pad_r))
             }
             (Anchor(s, idx), spec) => {
-                let (spec_idx, spec_trailing) = spec.anchor();
+                let (spec_idx, spec_trailing) = spec.anchor(style.column_separator_width());
                 let trailing = s.width() - idx;
                 let pad_l = spec_idx - idx;
                 let pad_r = spec_trailing - trailing;
                 write!(f, "{}{}{}", pad(pad_l), s, pad(pad_r))
             }
-            (Row(cells), Composite(spec)) => {
+            (Row(cells), Composite((_spec_s, spec_c))) => {
                 use itertools::EitherOrBoth::*;
 
                 let mut sep = false;
                 let empty_cell = Cell::empty();
-                for (cell, spec) in cells.iter().zip_longest(spec).map(|x| match x {
+                for (cell, spec) in cells.iter().zip_longest(spec_c).map(|x| match x {
                     Both(cell, spec) => (cell, spec),
-                    Left(cell) => todo!("cell without spec"),
+                    Left(_cell) => todo!("cell without spec"),
                     Right(spec) => (&empty_cell, spec),
                 }) {
                     if sep {
@@ -143,6 +140,10 @@ struct SimpleColSpec {
     anchor: Option<(usize, usize)>,
 }
 
+fn degenerate_anchor(width: Option<usize>) -> (usize, usize) {
+    (width.unwrap_or(0), 0)
+}
+
 impl SimpleColSpec {
     fn from_width(width: usize) -> Self {
         Self {
@@ -169,11 +170,12 @@ impl SimpleColSpec {
 
     fn anchor(&self) -> (usize, usize) {
         // anchor is expanded on the left to match the width
-        let width = self.width.unwrap_or(0);
-        self.anchor.map_or((width, 0), |(idx, trailing)| {
-            let expanded_idx = max(width, idx + trailing) - trailing;
-            (expanded_idx, trailing)
-        })
+        let width = self.width();
+        self.anchor
+            .map_or(degenerate_anchor(Some(width)), |(idx, trailing)| {
+                let expanded_idx = max(width, idx + trailing) - trailing;
+                (expanded_idx, trailing)
+            })
     }
 
     fn merge(self, other: SimpleColSpec) -> Self {
@@ -200,7 +202,7 @@ enum ColSpec {
     #[default]
     Empty,
     Simple(SimpleColSpec),
-    Composite(Vec<ColSpec>),
+    Composite((Option<SimpleColSpec>, Vec<ColSpec>)),
 }
 
 impl ColSpec {
@@ -212,40 +214,69 @@ impl ColSpec {
             (Empty, s) => s,
             (s, Empty) => s,
             (Simple(s0), Simple(s1)) => Simple(s0.merge(s1)),
-            (Composite(c0), Composite(c1)) => Composite(
-                c0.into_iter()
-                    .zip_longest(c1)
-                    .map(|x| match x {
-                        Both(c0, c1) => c0.merge(c1),
-                        Left(c0) => c0,
-                        Right(c1) => c1,
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-            _ => todo!("merging simple and composite not yet implemented"),
+
+            (Composite((s0, c0)), Composite((s1, c1))) => {
+                let s = match (s0, s1) {
+                    (Some(s0), Some(s1)) => Some(s0.merge(s1)),
+                    (s0, None) => s0,
+                    (None, s1) => s1,
+                };
+                Composite((
+                    s,
+                    c0.into_iter()
+                        .zip_longest(c1)
+                        .map(|x| match x {
+                            Both(c0, c1) => c0.merge(c1),
+                            Left(c0) => c0,
+                            Right(c1) => c1,
+                        })
+                        .collect::<Vec<_>>(),
+                ))
+            }
+            (Simple(s0), Composite((None, c1))) | (Composite((None, c1)), Simple(s0)) => {
+                Composite((Some(s0), c1))
+            }
+            (Simple(s0), Composite((Some(s1), c1))) | (Composite((Some(s1), c1)), Simple(s0)) => {
+                Composite((Some(s0.merge(s1)), c1))
+            }
         }
     }
 
-    fn width(&self) -> usize {
+    // return total with, including the column separators
+    fn width(&self, column_separator_width: usize) -> usize {
         use ColSpec::*;
 
         match self {
             Empty => 0,
-            Simple(s0) => s0.width(),
-            Composite(c0) => c0.iter().map(|c| c.width()).sum(),
+            Simple(s) => s.width(),
+            Composite((s, c)) => {
+                let separator_widths = if c.is_empty() {
+                    0
+                } else {
+                    column_separator_width * (c.len() - 1)
+                };
+                max(
+                    s.as_ref().map_or(0, |s| s.width()),
+                    c.iter()
+                        .map(|c| c.width(column_separator_width))
+                        .sum::<usize>()
+                        + separator_widths,
+                )
+            }
         }
     }
 
-    fn anchor(&self) -> (usize, usize) {
+    fn anchor(&self, column_separator_width: usize) -> (usize, usize) {
         use ColSpec::*;
 
         match self {
             Empty => (0, 0),
-            Simple(s0) => s0.anchor(),
-            Composite(cs) => {
-                let (idx0, trailing0) = cs.first().map(|c| c.anchor()).unwrap_or((0, 0));
-                let remaining_width = cs.iter().skip(1).map(|c| c.width()).sum::<usize>();
-                (idx0, trailing0 + remaining_width)
+            Simple(s) => s.anchor(),
+            Composite((s, _)) => {
+                let width = self.width(column_separator_width);
+                s.as_ref()
+                    .map(|s| s.anchor())
+                    .unwrap_or_else(|| degenerate_anchor(Some(width)))
             }
         }
     }
@@ -264,7 +295,10 @@ impl<'a> From<&Cell<'a>> for ColSpec {
                 let w = s.width();
                 Simple(SimpleColSpec::from_anchor(*idx, w - idx))
             }
-            Row(cells) => Composite(cells.iter().map(Into::<ColSpec>::into).collect::<Vec<_>>()),
+            Row(cells) => {
+                let cs = cells.iter().map(Into::<ColSpec>::into).collect::<Vec<_>>();
+                Composite((None, cs))
+            }
             Column(cells) => cells
                 .iter()
                 .fold(ColSpec::default(), |spec, cell| spec.merge(cell.into())),
@@ -360,7 +394,7 @@ D    E1 F999"#)]
 
     #[test_case(Row(vec![Left(Borrowed("A")), Left(Borrowed("B"))]), r#"A|B"#)]
     fn styled(cell: Cell, expected: &str) {
-        let pipe = Style::with_column_separator("|");
+        let pipe = Style::with_column_separator(Cow::Borrowed("|"));
         let result = cell.styled(&pipe).to_string();
         assert_eq!(&result, expected);
     }
@@ -374,6 +408,38 @@ D    E1 F999"#)]
         ]
 )]
     fn anchored(cell: Cell, expected_lines: Vec<&str>) {
+        let result = cell.to_string();
+        let expected = expected_lines.join_with("\n").to_string();
+        assert_eq!(&result, &expected);
+    }
+
+    #[test_case(Column(vec![
+        Row(vec![Row(vec![Left(Borrowed("A1")), Left(Borrowed("B1"))]), Left(Borrowed("C1"))]),
+        Row(vec![Left(Borrowed("A2")), Right(Borrowed("B")), Left(Borrowed("C"))]),
+    ]), vec![
+        "A1 B1 C1  ",
+        "A2     B C",
+        ]
+)]
+    fn merge_without_anchor(cell: Cell, expected_lines: Vec<&str>) {
+        let result = cell.to_string();
+        let expected = expected_lines.join_with("\n").to_string();
+        assert_eq!(&result, &expected);
+    }
+
+    #[test_case(Column(vec![
+        Row(vec![Row(vec![Left(Borrowed("A1")), Left(Borrowed("B1"))]), Left(Borrowed("C1a")), Left(Borrowed("D1-abc"))]),
+        Row(vec![Left(Borrowed("A2")), Anchor(Borrowed("12.50"), 2), Left(Borrowed("D"))]),
+        Row(vec![Left(Borrowed("A3")), Anchor(Borrowed("17.305"), 2), Right(Borrowed("D3"))]),
+        Row(vec![Right(Borrowed("A4")), Right(Borrowed("C4")), Right(Borrowed("D4"))]),
+    ]), vec![
+        "A1 B1 C1a    D1-abc",
+        "A2    12.50  D     ",
+        "A3    17.305     D3",
+        "   A4     C4     D4",
+        ]
+)]
+    fn merge_with_anchor(cell: Cell, expected_lines: Vec<&str>) {
         let result = cell.to_string();
         let expected = expected_lines.join_with("\n").to_string();
         assert_eq!(&result, &expected);
