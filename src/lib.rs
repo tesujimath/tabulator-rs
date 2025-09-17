@@ -379,3 +379,6 @@ D    E1 F999"#)]
         assert_eq!(&result, &expected);
     }
 }
+
+#[cfg(feature = "rust_decimal")]
+mod rust_decimal;

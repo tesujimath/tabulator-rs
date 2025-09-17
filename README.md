@@ -4,6 +4,14 @@ This is grid-style tabulation for Rust, for left/right/centre justification of s
 
 The motivation to build such a thing is [Beancount Lima](https://github.com/tesujimath/beancount-lima).
 
+## Features
+
+There are no default features.
+
+Optional features are:
+
+- rust_decimal - adds `From::<rust_decimal::Decimal>` for `Cell`
+
 ## License
 
 Licensed under either of
