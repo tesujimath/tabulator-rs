@@ -370,6 +370,26 @@ D    E1 F999"#)]
     fn left_justified_strings(rows: Vec<Vec<&str>>, expected: &str) {
         let cell = Column(
             rows.iter()
+                .map(|row| {
+                    Row(row
+                        .iter()
+                        .map(|s| (s.to_string(), Left).into())
+                        .collect::<Vec<_>>())
+                })
+                .collect::<Vec<_>>(),
+        );
+        let result = cell.to_string();
+        assert_eq!(result, expected);
+    }
+
+    #[test_case(vec![
+        vec!["A123", "B", "C1" ],
+        vec!["D", "E1", "F999" ],
+    ], r#"A123 B  C1  
+D    E1 F999"#)]
+    fn left_justified_strs(rows: Vec<Vec<&str>>, expected: &str) {
+        let cell = Column(
+            rows.iter()
                 .map(|row| Row(row.iter().map(|s| (*s, Left).into()).collect::<Vec<_>>()))
                 .collect::<Vec<_>>(),
         );
@@ -382,7 +402,7 @@ D    E1 F999"#)]
         vec!["D", "E1", "F999" ],
     ], r#"A123  B   C1
    D E1 F999"#)]
-    fn right_justified_strings(rows: Vec<Vec<&str>>, expected: &str) {
+    fn right_justified_strs(rows: Vec<Vec<&str>>, expected: &str) {
         let cell = Column(
             rows.iter()
                 .map(|row| Row(row.iter().map(|s| (*s, Right).into()).collect::<Vec<_>>()))
@@ -424,7 +444,7 @@ D    E1 F999"#)]
         vec!["D", "E1", "F999" ],
     ], r#"A123 B   C1 
  D   E1 F999"#)]
-    fn centred_strings(rows: Vec<Vec<&str>>, expected: &str) {
+    fn centred_strs(rows: Vec<Vec<&str>>, expected: &str) {
         let cell = Column(
             rows.iter()
                 .map(|row| Row(row.iter().map(|s| (*s, Centre).into()).collect::<Vec<_>>()))
