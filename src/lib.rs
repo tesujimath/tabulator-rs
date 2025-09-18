@@ -5,22 +5,22 @@
 //! Generates the output as shown above.
 //!
 //!```
-//! # use tabulator::Cell;
-//! # use std::borrow::Cow;
+//! # use tabulator::{Align, Cell};
 //!
 //!fn main() {
+//!    use Align::*;
 //!    use Cell::*;
-//!    use Cow::*;
 //!
 //!    let cell = Column(vec![
-//!        Row(vec![Left(Borrowed("A")), Anchor(Borrowed("1.25"), 1), Right(Borrowed("A99"))]),
-//!        Row(vec![Left(Borrowed("B1")), Anchor(Borrowed("12.2"), 2), Right(Borrowed("B"))]),
+//!        Row(vec![("A", Left).into(), Cell::anchored("1.25", 1), ("A99", Right).into()]),
+//!        Row(vec![("B1", Left).into(), Cell::anchored("12.2", 2), ("B", Right).into()]),
 //!    ]);
 //!
 //!    let output = cell.to_string();
 //!}
 
 use itertools::Itertools;
+#[allow(unused_imports)] // unsure why there's otherwise a warning here
 use joinery::Joinable;
 use lazy_format::make_lazy_format;
 use std::{
@@ -30,18 +30,40 @@ use std::{
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug)]
+pub enum Align {
+    Left,
+    Right,
+    Centre,
+}
+
+#[derive(Debug)]
 pub enum Cell<'a> {
-    Left(Cow<'a, str>),
-    Right(Cow<'a, str>),
-    Centre(Cow<'a, str>),
-    Anchor(Cow<'a, str>, usize), // index of character which is anchored, e.g. the decimal point
+    Aligned(Cow<'a, str>, Align),
+    Anchored(Cow<'a, str>, usize), // index of character which is anchored, e.g. the decimal point
     Row(Vec<Cell<'a>>),
     Column(Vec<Cell<'a>>),
 }
 
+impl<'a, S> From<(S, Align)> for Cell<'a>
+where
+    S: Into<Cow<'a, str>>,
+{
+    fn from(value: (S, Align)) -> Self {
+        Cell::Aligned(value.0.into(), value.1)
+    }
+}
+
 impl<'a> Cell<'a> {
     fn empty() -> Self {
-        Cell::Left(Cow::Borrowed(""))
+        Cell::Aligned(Cow::Borrowed(""), Align::Left)
+    }
+
+    /// Return the string anchored at position `idx`.
+    pub fn anchored<S>(s: S, idx: usize) -> Self
+    where
+        S: Into<Cow<'a, str>>,
+    {
+        Cell::Anchored(s.into(), idx)
     }
 }
 
@@ -86,21 +108,21 @@ impl<'a> Cell<'a> {
 
         let spec_width = spec.width(style.column_separator_width());
         match (self, spec) {
-            (Left(s), _spec) => {
-                let pad_w = spec_width - s.width();
-                write!(f, "{}{}", s, pad(pad_w))
+            (Aligned(s, align), _spec) => {
+                use Align::*;
+
+                let total = spec_width - s.width();
+                let (left, right) = match align {
+                    Left => (0, total),
+                    Right => (total, 0),
+                    Centre => {
+                        let left = total / 2;
+                        (left, total - left)
+                    }
+                };
+                write!(f, "{}{}{}", pad(left), s, pad(right))
             }
-            (Right(s), _spec) => {
-                let pad_w = spec_width - s.width();
-                write!(f, "{}{}", pad(pad_w), s)
-            }
-            (Centre(s), _spec) => {
-                let pad_w = spec_width - s.width();
-                let pad_l = pad_w / 2;
-                let pad_r = pad_w - pad_l;
-                write!(f, "{}{}{}", pad(pad_l), s, pad(pad_r))
-            }
-            (Anchor(s, idx), spec) => {
+            (Anchored(s, idx), spec) => {
                 let (spec_idx, spec_trailing) = spec.anchor(style.column_separator_width());
                 let trailing = s.width() - idx;
                 let pad_l = spec_idx - idx;
@@ -310,10 +332,8 @@ impl<'a> From<&Cell<'a>> for ColSpec {
         use ColSpec::*;
 
         match value {
-            Left(s) => Simple(SimpleColSpec::from_width(s.width())),
-            Right(s) => Simple(SimpleColSpec::from_width(s.width())),
-            Centre(s) => Simple(SimpleColSpec::from_width(s.width())),
-            Anchor(s, idx) => {
+            Aligned(s, _) => Simple(SimpleColSpec::from_width(s.width())),
+            Anchored(s, idx) => {
                 let w = s.width();
                 Simple(SimpleColSpec::from_anchor(*idx, w - idx))
             }
@@ -332,11 +352,11 @@ impl<'a> From<&Cell<'a>> for ColSpec {
 mod tests {
     use super::*;
     use test_case::test_case;
+    use Align::*;
     use Cell::*;
-    use Cow::*;
 
-    #[test_case(Left(Borrowed("Letsa go Mario!")), r#"Letsa go Mario!"#)]
-    #[test_case(Row(vec![Left(Borrowed("Letsa go Mario!")), Left(Borrowed("OK"))]), r#"Letsa go Mario! OK"#)]
+    #[test_case(("Letsa go Mario!", Left).into(), r#"Letsa go Mario!"#)]
+    #[test_case(Row(vec![("Letsa go Mario!", Left).into(), ("OK", Left).into()]), r#"Letsa go Mario! OK"#)]
     fn default_style(cell: Cell, expected: &str) {
         let result = cell.to_string();
         assert_eq!(&result, expected);
@@ -350,7 +370,7 @@ D    E1 F999"#)]
     fn left_justified_strings(rows: Vec<Vec<&str>>, expected: &str) {
         let cell = Column(
             rows.iter()
-                .map(|row| Row(row.iter().map(|s| Left(Borrowed(*s))).collect::<Vec<_>>()))
+                .map(|row| Row(row.iter().map(|s| (*s, Left).into()).collect::<Vec<_>>()))
                 .collect::<Vec<_>>(),
         );
         let result = cell.to_string();
@@ -365,7 +385,7 @@ D    E1 F999"#)]
     fn right_justified_strings(rows: Vec<Vec<&str>>, expected: &str) {
         let cell = Column(
             rows.iter()
-                .map(|row| Row(row.iter().map(|s| Right(Borrowed(*s))).collect::<Vec<_>>()))
+                .map(|row| Row(row.iter().map(|s| (*s, Right).into()).collect::<Vec<_>>()))
                 .collect::<Vec<_>>(),
         );
         let result = cell.to_string();
@@ -391,7 +411,7 @@ D    E1 F999"#)]
     fn empty_lines_space_filled(rows: Vec<Vec<&str>>, expected_lines: Vec<&str>) {
         let cell = Column(
             rows.iter()
-                .map(|row| Row(row.iter().map(|s| Right(Borrowed(*s))).collect::<Vec<_>>()))
+                .map(|row| Row(row.iter().map(|s| (*s, Right).into()).collect::<Vec<_>>()))
                 .collect::<Vec<_>>(),
         );
         let result = cell.to_string();
@@ -407,14 +427,14 @@ D    E1 F999"#)]
     fn centred_strings(rows: Vec<Vec<&str>>, expected: &str) {
         let cell = Column(
             rows.iter()
-                .map(|row| Row(row.iter().map(|s| Centre(Borrowed(*s))).collect::<Vec<_>>()))
+                .map(|row| Row(row.iter().map(|s| (*s, Centre).into()).collect::<Vec<_>>()))
                 .collect::<Vec<_>>(),
         );
         let result = cell.to_string();
         assert_eq!(result, expected);
     }
 
-    #[test_case(Row(vec![Left(Borrowed("A")), Left(Borrowed("B"))]), r#"A|B"#)]
+    #[test_case(Row(vec![("A", Left).into(), ("B", Left).into()]), r#"A|B"#)]
     fn styled(cell: Cell, expected: &str) {
         let pipe = Style::with_column_separator(Cow::Borrowed("|"));
         let result = cell.styled(&pipe).to_string();
@@ -422,8 +442,8 @@ D    E1 F999"#)]
     }
 
     #[test_case(Column(vec![
-        Row(vec![Left(Borrowed("A")), Anchor(Borrowed("1.25"), 1), Right(Borrowed("A99"))]),
-        Row(vec![Left(Borrowed("B1")), Anchor(Borrowed("12.2"), 2), Right(Borrowed("B"))]),
+        Row(vec![("A", Left).into(), Cell::anchored("1.25", 1), ("A99", Right).into()]),
+        Row(vec![("B1", Left).into(), Cell::anchored("12.2", 2), ("B", Right).into()]),
     ]), vec![
         "A   1.25 A99",
         "B1 12.2    B",
@@ -436,8 +456,8 @@ D    E1 F999"#)]
     }
 
     #[test_case(Column(vec![
-        Row(vec![Row(vec![Left(Borrowed("A1")), Left(Borrowed("B1"))]), Left(Borrowed("C1"))]),
-        Row(vec![Left(Borrowed("A2")), Right(Borrowed("B")), Left(Borrowed("C"))]),
+        Row(vec![Row(vec![("A1", Left).into(), ("B1", Left).into()]), ("C1", Left).into()]),
+        Row(vec![("A2", Left).into(), ("B", Right).into(), ("C", Left).into()]),
     ]), vec![
         "A1 B1 C1  ",
         "A2     B C",
@@ -450,10 +470,10 @@ D    E1 F999"#)]
     }
 
     #[test_case(Column(vec![
-        Row(vec![Row(vec![Left(Borrowed("A1")), Left(Borrowed("B1"))]), Left(Borrowed("C1a")), Left(Borrowed("D1-abc"))]),
-        Row(vec![Left(Borrowed("A2")), Anchor(Borrowed("12.50"), 2), Left(Borrowed("D"))]),
-        Row(vec![Left(Borrowed("A3")), Anchor(Borrowed("17.305"), 2), Right(Borrowed("D3"))]),
-        Row(vec![Right(Borrowed("A4")), Right(Borrowed("C4")), Right(Borrowed("D4"))]),
+        Row(vec![Row(vec![("A1", Left).into(), ("B1", Left).into()]), ("C1a", Left).into(), ("D1-abc", Left).into()]),
+        Row(vec![("A2", Left).into(), Cell::anchored("12.50", 2), ("D", Left).into()]),
+        Row(vec![("A3", Left).into(), Cell::anchored("17.305", 2), ("D3", Right).into()]),
+        Row(vec![("A4", Right).into(), ("C4", Right).into(), ("D4", Right).into()]),
     ]), vec![
         "A1 B1 C1a    D1-abc",
         "A2    12.50  D     ",

@@ -1,8 +1,5 @@
-use std::borrow::Cow;
-
-use rust_decimal::Decimal;
-
 use crate::Cell;
+use rust_decimal::Decimal;
 
 impl<'a> From<Decimal> for Cell<'a> {
     // anchor the decimal at the units digit, so will align with e.g. integers
@@ -21,17 +18,17 @@ impl<'a> From<Decimal> for Cell<'a> {
             0
         };
 
-        Cell::Anchor(Cow::Owned(value.to_string()), idx as usize)
+        Cell::anchored(value.to_string(), idx as usize)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Cell;
+    use crate::{Align, Cell};
     use joinery::Joinable;
     use rust_decimal::Decimal;
-    use std::borrow::Cow::*;
     use test_case::test_case;
+    use Align::*;
     use Cell::*;
 
     #[test_case("1.23", 0)]
@@ -40,7 +37,7 @@ mod tests {
     fn decimal_anchor(s: &str, expected_idx: usize) {
         let d = s.parse::<Decimal>().unwrap();
         let result = Into::<Cell>::into(d);
-        if let Anchor(result_s, result_idx) = result {
+        if let Anchored(result_s, result_idx) = result {
             assert_eq!(result_s, s);
             assert_eq!(result_idx, expected_idx);
         } else {
@@ -49,8 +46,8 @@ mod tests {
     }
 
     #[test_case(Column(vec![
-        Row(vec![Left(Borrowed("Assets:Bank:Current")), "350.75".parse::<Decimal>().unwrap().into(), Left(Borrowed("NZD")), Right(Borrowed("Howzah!"))]),
-        Row(vec![Left(Borrowed("Assets:Bank:Investment")), "2.25".parse::<Decimal>().unwrap().into(), Left(Borrowed("NZD")), Right(Borrowed("Skint"))]),
+        Row(vec![("Assets:Bank:Current", Left).into(), "350.75".parse::<Decimal>().unwrap().into(), ("NZD", Left).into(), ("Howzah!", Right).into()]),
+        Row(vec![("Assets:Bank:Investment", Left).into(), "2.25".parse::<Decimal>().unwrap().into(), ("NZD", Left).into(), ("Skint", Right).into()]),
     ]), vec![
         "Assets:Bank:Current    350.75 NZD Howzah!",
         "Assets:Bank:Investment   2.25 NZD   Skint",
