@@ -26,7 +26,8 @@ There are no default features.
 
 Optional features are:
 
-- `rust_decimal` - adds a dependency on that crate and `From::<rust_decimal::Decimal>` for `Cell`
+- `rust_decimal` - adds a dependency on that crate and `From::<Decimal>` for `Cell`
+- `num-bigint` - adds a dependency on that crate and `From::<BigInt>` and `From::<BigUint>` for `Cell`
 
 ## License
 

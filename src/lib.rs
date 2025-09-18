@@ -489,5 +489,7 @@ D    E1 F999"#)]
 }
 
 mod conversions;
+#[cfg(feature = "num-bigint")]
+mod num_bigint;
 #[cfg(feature = "rust_decimal")]
 mod rust_decimal;

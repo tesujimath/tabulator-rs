@@ -1,6 +1,6 @@
 use super::Cell;
 
-fn anchor_units(s: String) -> Cell<'static> {
+pub(crate) fn anchor_units(s: String) -> Cell<'static> {
     let idx = s.len() - 1;
     Cell::anchored(s, idx)
 }
