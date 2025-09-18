@@ -4,13 +4,29 @@ This is grid-style tabulation for Rust, for left/right/centre justification of s
 
 The motivation to build such a thing is [Beancount Lima](https://github.com/tesujimath/beancount-lima).
 
+## Example Output
+
+### Simple case with manual anchoring
+
+```text
+A   1.25 A99
+B1 12.2    B
+```
+
+### Using `rust_decimal` auto-anchor
+
+```text
+Assets:Bank:Current    350.75 NZD Howzah!
+Assets:Bank:Investment   2.25 NZD   Skint
+```
+
 ## Features
 
 There are no default features.
 
 Optional features are:
 
-- rust_decimal - adds `From::<rust_decimal::Decimal>` for `Cell`
+- `rust_decimal` - adds a dependency on that crate and `From::<rust_decimal::Decimal>` for `Cell`
 
 ## License
 

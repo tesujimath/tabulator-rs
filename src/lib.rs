@@ -1,3 +1,25 @@
+#![doc = include_str!("../README.md")]
+
+//! # Simple example
+//!
+//! Generates the output as shown above.
+//!
+//!```
+//! # use tabulator::Cell;
+//! # use std::borrow::Cow;
+//!
+//!fn main() {
+//!    use Cell::*;
+//!    use Cow::*;
+//!
+//!    let cell = Column(vec![
+//!        Row(vec![Left(Borrowed("A")), Anchor(Borrowed("1.25"), 1), Right(Borrowed("A99"))]),
+//!        Row(vec![Left(Borrowed("B1")), Anchor(Borrowed("12.2"), 2), Right(Borrowed("B"))]),
+//!    ]);
+//!
+//!    let output = cell.to_string();
+//!}
+
 use itertools::Itertools;
 use joinery::Joinable;
 use lazy_format::make_lazy_format;
