@@ -488,5 +488,6 @@ D    E1 F999"#)]
     }
 }
 
+mod conversions;
 #[cfg(feature = "rust_decimal")]
 mod rust_decimal;
