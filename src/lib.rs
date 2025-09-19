@@ -23,10 +23,9 @@ use itertools::Itertools;
 #[allow(unused_imports)] // unsure why there's otherwise a warning here
 use joinery::Joinable;
 use lazy_format::make_lazy_format;
-use std::{
-    cmp::max,
-    {borrow::Cow, fmt::Display},
-};
+use std::{borrow::Cow, cmp::max, fmt::Display, iter::repeat};
+use strum::IntoEnumIterator;
+use strum_macros::{EnumCount, EnumIter};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug)]
@@ -34,6 +33,72 @@ pub enum Align {
     Left,
     Right,
     Centre,
+}
+
+#[derive(Copy, Clone, EnumCount, EnumIter, Default, Debug)]
+pub enum Spacing {
+    Minor,
+    #[default]
+    Medium,
+    Major,
+}
+
+pub struct Layout {
+    primary: Spacing,
+    secondary: Vec<Option<Layout>>,
+}
+
+/// return an infinite iterator over the secondary layouts, defaulting to None
+fn secondary_layout_iter(layout: Option<&Layout>) -> impl Iterator<Item = Option<&Layout>> {
+    layout
+        .into_iter()
+        .flat_map(|layout| &layout.secondary)
+        .map(Option::as_ref)
+        .chain(repeat(None))
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+pub enum Style {
+    #[default]
+    Spaced,
+    Piped,
+}
+
+/// Indexed by Spacing as usize
+struct Styled(Vec<&'static str>);
+
+impl From<Style> for Styled {
+    fn from(value: Style) -> Self {
+        use Spacing::*;
+        use Style::*;
+
+        Self(match value {
+            Spaced => Spacing::iter()
+                .map(|spacing| match spacing {
+                    Minor => " ",
+                    Medium => "  ",
+                    Major => "   ",
+                })
+                .collect::<Vec<_>>(),
+            Piped => Spacing::iter()
+                .map(|spacing| match spacing {
+                    Minor => "|",
+                    Medium => "||",
+                    Major => "|||",
+                })
+                .collect::<Vec<_>>(),
+        })
+    }
+}
+
+impl Styled {
+    fn space(&self, spacing: Spacing) -> &'static str {
+        self.0[spacing as usize]
+    }
+
+    fn width(&self, spacing: Spacing) -> usize {
+        self.space(spacing).len()
+    }
 }
 
 #[derive(Debug)]
@@ -54,7 +119,7 @@ where
 }
 
 impl<'a> Cell<'a> {
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Cell::Aligned(Cow::Borrowed(""), Align::Left)
     }
 
@@ -67,46 +132,25 @@ impl<'a> Cell<'a> {
     }
 }
 
-#[derive(Debug)]
-pub struct Style<'a> {
-    column_separator: Cow<'a, str>,
-}
-
-impl<'a> Default for Style<'a> {
-    fn default() -> Self {
-        Self {
-            column_separator: Cow::Borrowed(" "),
-        }
-    }
-}
-
-impl<'a> Style<'a> {
-    pub fn with_column_separator(column_separator: Cow<'a, str>) -> Self {
-        Self { column_separator }
-    }
-
-    fn column_separator_width(&self) -> usize {
-        self.column_separator.as_ref().len()
-    }
-}
-
 impl<'a> Cell<'a> {
-    pub fn styled<'s>(&self, style: &Style<'s>) -> impl Display {
+    pub fn layout(&self, layout: Option<&Layout>, style: Style) -> impl Display {
         let spec: ColSpec = self.into();
 
-        make_lazy_format!(|f| self.format(f, style, &spec))
+        let styled = style.into();
+        make_lazy_format!(|f| self.format(f, layout, &styled, &spec))
     }
 
-    fn format<'s>(
+    fn format(
         &self,
         f: &mut std::fmt::Formatter<'_>,
-        style: &Style<'s>,
+        layout: Option<&Layout>,
+        styled: &Styled,
         spec: &ColSpec,
     ) -> std::fmt::Result {
         use Cell::*;
         use ColSpec::*;
 
-        let spec_width = spec.width(style.column_separator_width());
+        let spec_width = spec.width(layout, styled);
         match (self, spec) {
             (Aligned(s, align), _spec) => {
                 use Align::*;
@@ -123,7 +167,7 @@ impl<'a> Cell<'a> {
                 write!(f, "{}{}{}", pad(left), s, pad(right))
             }
             (Anchored(s, idx), spec) => {
-                let (spec_idx, spec_trailing) = spec.anchor(style.column_separator_width());
+                let (spec_idx, spec_trailing) = spec.anchor(layout, styled);
                 let trailing = s.width() - idx;
                 let pad_l = spec_idx - idx;
                 let pad_r = spec_trailing - trailing;
@@ -134,16 +178,26 @@ impl<'a> Cell<'a> {
 
                 let mut sep = false;
                 let empty_cell = Cell::empty();
-                for (cell, spec) in cells.iter().zip_longest(spec_c).map(|x| match x {
-                    Both(cell, spec) => (cell, spec),
-                    Left(_cell) => todo!("cell without spec"),
-                    Right(spec) => (&empty_cell, spec),
-                }) {
+
+                let spacing = layout
+                    .map(|layout| layout.primary)
+                    .unwrap_or(Spacing::Medium);
+
+                for ((cell, spec), layout) in cells
+                    .iter()
+                    .zip_longest(spec_c)
+                    .map(|x| match x {
+                        Both(cell, spec) => (cell, spec),
+                        Left(_cell) => todo!("cell without spec"),
+                        Right(spec) => (&empty_cell, spec),
+                    })
+                    .zip(secondary_layout_iter(layout))
+                {
                     if sep {
-                        write!(f, "{}", &style.column_separator)?
+                        write!(f, "{}", styled.space(spacing))?
                     }
                     sep = true;
-                    cell.format(f, style, spec)?;
+                    cell.format(f, layout, styled, spec)?;
                 }
                 Ok(())
             }
@@ -154,7 +208,7 @@ impl<'a> Cell<'a> {
                         f.write_str("\n")?;
                     }
                     sep = true;
-                    cell.format(f, style, spec)?;
+                    cell.format(f, layout, styled, spec)?;
                 }
                 Ok(())
             }
@@ -165,7 +219,7 @@ impl<'a> Cell<'a> {
 
 impl<'a> Display for Cell<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.styled(&Style::default()))
+        write!(f, "{}", self.layout(None, Style::default()))
     }
 }
 
@@ -179,7 +233,7 @@ fn pad(n: usize) -> impl Display {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-struct SimpleColSpec {
+struct SingleColSpec {
     width: Option<usize>,
     anchor: Option<(usize, usize)>,
 }
@@ -188,7 +242,7 @@ fn degenerate_anchor(width: Option<usize>) -> (usize, usize) {
     (width.unwrap_or(0), 0)
 }
 
-impl SimpleColSpec {
+impl SingleColSpec {
     fn from_width(width: usize) -> Self {
         Self {
             width: Some(width),
@@ -222,7 +276,7 @@ impl SimpleColSpec {
             })
     }
 
-    fn merge(self, other: SimpleColSpec) -> Self {
+    fn merge(self, other: SingleColSpec) -> Self {
         let width = match (self.width, other.width) {
             (Some(w0), Some(w1)) => Some(max(w0, w1)),
             (w0, None) => w0,
@@ -245,8 +299,8 @@ impl SimpleColSpec {
 enum ColSpec {
     #[default]
     Empty,
-    Simple(SimpleColSpec),
-    Composite((Option<SimpleColSpec>, Vec<ColSpec>)),
+    Simple(SingleColSpec),
+    Composite((Option<SingleColSpec>, Vec<ColSpec>)),
 }
 
 impl ColSpec {
@@ -287,13 +341,15 @@ impl ColSpec {
     }
 
     // return total with, including the column separators
-    fn width(&self, column_separator_width: usize) -> usize {
+    fn width(&self, layout: Option<&Layout>, styled: &Styled) -> usize {
         use ColSpec::*;
 
         match self {
             Empty => 0,
             Simple(s) => s.width(),
             Composite((s, c)) => {
+                let column_separator_width =
+                    styled.width(layout.map(|layout| layout.primary).unwrap_or_default());
                 let separator_widths = if c.is_empty() {
                     0
                 } else {
@@ -302,7 +358,8 @@ impl ColSpec {
                 max(
                     s.as_ref().map_or(0, |s| s.width()),
                     c.iter()
-                        .map(|c| c.width(column_separator_width))
+                        .zip(secondary_layout_iter(layout))
+                        .map(|(c, layout)| c.width(layout, styled))
                         .sum::<usize>()
                         + separator_widths,
                 )
@@ -310,14 +367,14 @@ impl ColSpec {
         }
     }
 
-    fn anchor(&self, column_separator_width: usize) -> (usize, usize) {
+    fn anchor(&self, layout: Option<&Layout>, styled: &Styled) -> (usize, usize) {
         use ColSpec::*;
 
         match self {
             Empty => (0, 0),
             Simple(s) => s.anchor(),
             Composite((s, _)) => {
-                let width = self.width(column_separator_width);
+                let width = self.width(layout, styled);
                 s.as_ref()
                     .map(|s| s.anchor())
                     .unwrap_or_else(|| degenerate_anchor(Some(width)))
@@ -332,10 +389,10 @@ impl<'a> From<&Cell<'a>> for ColSpec {
         use ColSpec::*;
 
         match value {
-            Aligned(s, _) => Simple(SimpleColSpec::from_width(s.width())),
+            Aligned(s, _) => Simple(SingleColSpec::from_width(s.width())),
             Anchored(s, idx) => {
                 let w = s.width();
-                Simple(SimpleColSpec::from_anchor(*idx, w - idx))
+                Simple(SingleColSpec::from_anchor(*idx, w - idx))
             }
             Row(cells) => {
                 let cs = cells.iter().map(Into::<ColSpec>::into).collect::<Vec<_>>();
@@ -356,7 +413,7 @@ mod tests {
     use Cell::*;
 
     #[test_case(("Letsa go Mario!", Left).into(), r#"Letsa go Mario!"#)]
-    #[test_case(Row(vec![("Letsa go Mario!", Left).into(), ("OK", Left).into()]), r#"Letsa go Mario! OK"#)]
+    #[test_case(Row(vec![("Letsa go Mario!", Left).into(), ("OK", Left).into()]), r#"Letsa go Mario!  OK"#)]
     fn default_style(cell: Cell, expected: &str) {
         let result = cell.to_string();
         assert_eq!(&result, expected);
@@ -365,8 +422,8 @@ mod tests {
     #[test_case(vec![
         vec!["A123", "B", "C1" ],
         vec!["D", "E1", "F999" ],
-    ], r#"A123 B  C1  
-D    E1 F999"#)]
+    ], r#"A123  B   C1  
+D     E1  F999"#)]
     fn left_justified_strings(rows: Vec<Vec<&str>>, expected: &str) {
         let cell = Column(
             rows.iter()
@@ -385,8 +442,8 @@ D    E1 F999"#)]
     #[test_case(vec![
         vec!["A123", "B", "C1" ],
         vec!["D", "E1", "F999" ],
-    ], r#"A123 B  C1  
-D    E1 F999"#)]
+    ], r#"A123  B   C1  
+D     E1  F999"#)]
     fn left_justified_strs(rows: Vec<Vec<&str>>, expected: &str) {
         let cell = Column(
             rows.iter()
@@ -400,8 +457,8 @@ D    E1 F999"#)]
     #[test_case(vec![
         vec!["A123", "B", "C1" ],
         vec!["D", "E1", "F999" ],
-    ], r#"A123  B   C1
-   D E1 F999"#)]
+    ], r#"A123   B    C1
+   D  E1  F999"#)]
     fn right_justified_strs(rows: Vec<Vec<&str>>, expected: &str) {
         let cell = Column(
             rows.iter()
@@ -420,12 +477,12 @@ D    E1 F999"#)]
         vec!["G", "H" ],
         Vec::default(),
     ], vec![
-        "            ",
-        "A123  B   C1",
-        "            ",
-        "   D E1 F999",
-        "   G  H     ",
-        "            ",
+        "              ",
+        "A123   B    C1",
+        "              ",
+        "   D  E1  F999",
+        "   G   H      ",
+        "              ",
     ]
 )]
     fn empty_lines_space_filled(rows: Vec<Vec<&str>>, expected_lines: Vec<&str>) {
@@ -442,8 +499,8 @@ D    E1 F999"#)]
     #[test_case(vec![
         vec!["A123", "B", "C1" ],
         vec!["D", "E1", "F999" ],
-    ], r#"A123 B   C1 
- D   E1 F999"#)]
+    ], r#"A123  B    C1 
+ D    E1  F999"#)]
     fn centred_strs(rows: Vec<Vec<&str>>, expected: &str) {
         let cell = Column(
             rows.iter()
@@ -454,10 +511,26 @@ D    E1 F999"#)]
         assert_eq!(result, expected);
     }
 
-    #[test_case(Row(vec![("A", Left).into(), ("B", Left).into()]), r#"A|B"#)]
+    #[test_case(Row(vec![Row(vec![("A", Left).into(), ("B", Left).into()]),Row(vec![("C", Left).into(), ("D", Left).into()])]),
+        r#"A||B|||C|D"#)]
     fn styled(cell: Cell, expected: &str) {
-        let pipe = Style::with_column_separator(Cow::Borrowed("|"));
-        let result = cell.styled(&pipe).to_string();
+        use Spacing::*;
+        use Style::*;
+
+        let layout = Layout {
+            primary: Major,
+            secondary: vec![
+                Some(Layout {
+                    primary: Medium,
+                    secondary: Vec::default(),
+                }),
+                Some(Layout {
+                    primary: Minor,
+                    secondary: Vec::default(),
+                }),
+            ],
+        };
+        let result = cell.layout(Some(&layout), Piped).to_string();
         assert_eq!(&result, expected);
     }
 
@@ -465,8 +538,8 @@ D    E1 F999"#)]
         Row(vec![("A", Left).into(), Cell::anchored("1.25", 1), ("A99", Right).into()]),
         Row(vec![("B1", Left).into(), Cell::anchored("12.2", 2), ("B", Right).into()]),
     ]), vec![
-        "A   1.25 A99",
-        "B1 12.2    B",
+        "A    1.25  A99",
+        "B1  12.2     B",
         ]
 )]
     fn anchored(cell: Cell, expected_lines: Vec<&str>) {
@@ -479,8 +552,8 @@ D    E1 F999"#)]
         Row(vec![Row(vec![("A1", Left).into(), ("B1", Left).into()]), ("C1", Left).into()]),
         Row(vec![("A2", Left).into(), ("B", Right).into(), ("C", Left).into()]),
     ]), vec![
-        "A1 B1 C1  ",
-        "A2     B C",
+        "A1  B1  C1   ",
+        "A2       B  C",
         ]
 )]
     fn merge_without_anchor(cell: Cell, expected_lines: Vec<&str>) {
@@ -495,10 +568,10 @@ D    E1 F999"#)]
         Row(vec![("A3", Left).into(), Cell::anchored("17.305", 2), ("D3", Right).into()]),
         Row(vec![("A4", Right).into(), ("C4", Right).into(), ("D4", Right).into()]),
     ]), vec![
-        "A1 B1 C1a    D1-abc",
-        "A2    12.50  D     ",
-        "A3    17.305     D3",
-        "   A4     C4     D4",
+        "A1  B1  C1a     D1-abc",
+        "A2      12.50   D     ",
+        "A3      17.305      D3",
+        "    A4      C4      D4",
         ]
 )]
     fn merge_with_anchor(cell: Cell, expected_lines: Vec<&str>) {
