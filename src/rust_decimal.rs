@@ -24,7 +24,7 @@ impl<'a> From<Decimal> for Cell<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Align, Cell, Layout, Spacing, Style};
+    use crate::{Align, Cell, Spacing, Style};
     use joinery::Joinable;
     use rust_decimal::Decimal;
     use test_case::test_case;
@@ -54,10 +54,7 @@ mod tests {
         ]
 )]
     fn bank_accounts(cell: Cell, expected_lines: Vec<&str>) {
-        let layout = Layout {
-            primary: Spacing::Minor,
-            secondary: Vec::default(),
-        };
+        let layout = Spacing::Minor.into();
         let result = cell.layout(Some(&layout), Style::default()).to_string();
         let expected = expected_lines.join_with("\n").to_string();
         assert_eq!(&result, &expected);

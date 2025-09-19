@@ -45,14 +45,39 @@ pub enum Spacing {
 
 pub struct Layout {
     primary: Spacing,
-    secondary: Vec<Option<Layout>>,
+    children: Vec<Option<Layout>>,
+}
+
+impl From<Spacing> for Layout {
+    fn from(value: Spacing) -> Self {
+        Layout {
+            primary: value,
+            children: Vec::default(),
+        }
+    }
+}
+
+impl Layout {
+    pub fn with_children(primary: Spacing, children: Vec<Option<Layout>>) -> Layout {
+        Layout { primary, children }
+    }
+}
+
+#[macro_export]
+macro_rules! layout {
+    ($val:expr) => {
+        Some(Into::<Layout>::into($val))
+    };
+    ($val:expr, [ $($child:tt),* $(,)? ]) => {
+        Some(Layout::with_children( $val, vec![ $( layout!($child) ),* ] ))
+    };
 }
 
 /// return an infinite iterator over the secondary layouts, defaulting to None
-fn secondary_layout_iter(layout: Option<&Layout>) -> impl Iterator<Item = Option<&Layout>> {
+fn child_layout_iter(layout: Option<&Layout>) -> impl Iterator<Item = Option<&Layout>> {
     layout
         .into_iter()
-        .flat_map(|layout| &layout.secondary)
+        .flat_map(|layout| &layout.children)
         .map(Option::as_ref)
         .chain(repeat(None))
 }
@@ -191,7 +216,7 @@ impl<'a> Cell<'a> {
                         Left(_cell) => todo!("cell without spec"),
                         Right(spec) => (&empty_cell, spec),
                     })
-                    .zip(secondary_layout_iter(layout))
+                    .zip(child_layout_iter(layout))
                 {
                     if sep {
                         write!(f, "{}", styled.space(spacing))?
@@ -358,7 +383,7 @@ impl ColSpec {
                 max(
                     s.as_ref().map_or(0, |s| s.width()),
                     c.iter()
-                        .zip(secondary_layout_iter(layout))
+                        .zip(child_layout_iter(layout))
                         .map(|(c, layout)| c.width(layout, styled))
                         .sum::<usize>()
                         + separator_widths,
@@ -517,20 +542,8 @@ D     E1  F999"#)]
         use Spacing::*;
         use Style::*;
 
-        let layout = Layout {
-            primary: Major,
-            secondary: vec![
-                Some(Layout {
-                    primary: Medium,
-                    secondary: Vec::default(),
-                }),
-                Some(Layout {
-                    primary: Minor,
-                    secondary: Vec::default(),
-                }),
-            ],
-        };
-        let result = cell.layout(Some(&layout), Piped).to_string();
+        let layout = layout!(Major, [Medium, Minor]);
+        let result = cell.layout(layout.as_ref(), Piped).to_string();
         assert_eq!(&result, expected);
     }
 
