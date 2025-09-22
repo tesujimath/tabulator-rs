@@ -1,6 +1,6 @@
 #[allow(unused_imports)] // unsure why there's otherwise a warning here
 use joinery::Joinable;
-use tabulator::{layout, Align, Cell, Layout, Spacing, Style};
+use tabulator::{spacing, Align, Cell, Space, Spacing, Style};
 use test_case::test_case;
 use Align::*;
 use Cell::*;
@@ -154,9 +154,9 @@ fn merge_with_anchor(cell: Cell, expected_lines: Vec<&str>) {
         r#"A||B||C||D"#)]
 fn styled(cell: Cell, expected: &str) {
     use Style::*;
-    let layout = Layout::default();
+    let spacing = Spacing::default();
 
-    let result = cell.layout(&layout, Piped).to_string();
+    let result = cell.layout(&spacing, Piped).to_string();
     assert_eq!(&result, expected);
 }
 
@@ -168,12 +168,12 @@ fn styled(cell: Cell, expected: &str) {
         "A2   B1  C1   D1a E1-abc   F2",
         ]
 )]
-fn simple_nested_layout(cell: Cell, expected_lines: Vec<&str>) {
-    use Spacing::*;
+fn simple_nested_spacing(cell: Cell, expected_lines: Vec<&str>) {
+    use Space::*;
 
-    let layout = layout!([Major; _, Medium, Minor]);
-    // println!("layout {:?}", &layout);
-    let result = cell.layout(&layout, Style::default()).to_string();
+    let spacing = spacing!([Major; _, Medium, Minor]);
+    // println!("spacing {:?}", &spacing);
+    let result = cell.layout(&spacing, Style::default()).to_string();
     let expected = expected_lines.join_with("\n").to_string();
     assert_eq!(&result, &expected);
 }
@@ -198,10 +198,10 @@ fn simple_nested_layout(cell: Cell, expected_lines: Vec<&str>) {
         "A1   B1  C1 X1Y1 D1  E1   F1 G1   H1",
         ]
 )]
-fn doubly_nested_layout(cell: Cell, expected_lines: Vec<&str>) {
-    use Spacing::*;
+fn doubly_nested_spacing(cell: Cell, expected_lines: Vec<&str>) {
+    use Space::*;
 
-    let layout = layout!([ Major;
+    let spacing = spacing!([ Major;
         _,
         [
             Medium;
@@ -215,8 +215,8 @@ fn doubly_nested_layout(cell: Cell, expected_lines: Vec<&str>) {
         Minor,
         _
     ]);
-    // println!("layout {:?}", &layout);
-    let result = cell.layout(&layout, Style::default()).to_string();
+    // println!("spacing {:?}", &spacing);
+    let result = cell.layout(&spacing, Style::default()).to_string();
     let expected = expected_lines.join_with("\n").to_string();
     assert_eq!(&result, &expected);
 }
@@ -244,12 +244,12 @@ fn doubly_nested_layout(cell: Cell, expected_lines: Vec<&str>) {
         "A   BA  BBA BBB  BC   CA  CBA CBB  CC   DA  DB   X",
         ]
 )]
-fn nested_layout_repeat(cell: Cell, expected_lines: Vec<&str>) {
-    use Spacing::*;
+fn nested_spacing_repeat(cell: Cell, expected_lines: Vec<&str>) {
+    use Space::*;
 
-    let layout = layout!([Major; _, [Medium; Minor]]);
-    // println!("layout {:?}", &layout);
-    let result = cell.layout(&layout, Style::default()).to_string();
+    let spacing = spacing!([Major; _, [Medium; Minor]]);
+    // println!("spacing {:?}", &spacing);
+    let result = cell.layout(&spacing, Style::default()).to_string();
     let expected = expected_lines.join_with("\n").to_string();
     assert_eq!(&result, &expected);
 }

@@ -54,8 +54,8 @@ mod tests {
         ]
 )]
     fn bank_accounts(cell: Cell, expected_lines: Vec<&str>) {
-        let layout = Spacing::Minor.into();
-        let result = cell.layout(Some(&layout), Style::default()).to_string();
+        let spacing = Spacing::Minor.into();
+        let result = cell.spacing(Some(&spacing), Style::default()).to_string();
         let expected = expected_lines.join_with("\n").to_string();
         assert_eq!(&result, &expected);
     }

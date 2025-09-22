@@ -40,7 +40,7 @@ pub enum Align {
 }
 
 #[derive(Copy, Clone, EnumCount, EnumIter, Default, Debug)]
-pub enum Spacing {
+pub enum Space {
     Flush,
     Minor,
     #[default]
@@ -49,32 +49,32 @@ pub enum Spacing {
 }
 
 #[derive(Clone, Default, Debug)]
-/// Layouts are flexible.  If children are not specified, they default to primary.
-/// And the last child layout is reused for any children beyond what was specified.
-pub struct Layout {
-    primary: Spacing,
-    children: Option<Vec<Option<Layout>>>,
+/// Spacing is flexible.  If children are not specified, they default to primary.
+/// And the last child spacing is reused for any children beyond what was specified.
+pub struct Spacing {
+    primary: Space,
+    children: Option<Vec<Option<Spacing>>>,
 }
 
-impl From<Spacing> for Layout {
-    fn from(value: Spacing) -> Self {
-        Layout {
+impl From<Space> for Spacing {
+    fn from(value: Space) -> Self {
+        Spacing {
             primary: value,
             children: None,
         }
     }
 }
 
-impl Layout {
-    pub fn with_children(primary: Spacing, children: Vec<Option<Layout>>) -> Layout {
-        Layout {
+impl Spacing {
+    pub fn with_children(primary: Space, children: Vec<Option<Spacing>>) -> Spacing {
+        Spacing {
             primary,
             children: Some(children),
         }
     }
 
-    // return best-fit layout for i_child, which is the latest one which has a value, or self
-    fn get_child_layout(&self, i_child: usize) -> &Layout {
+    // return best-fit spacing for i_child, which is the latest one which has a value, or self
+    fn get_child_spacing(&self, i_child: usize) -> &Spacing {
         match &self.children {
             None => self,
             Some(children) => {
@@ -83,8 +83,8 @@ impl Layout {
                 } else {
                     // loop back until we find something
                     for i in (0..min(i_child + 1, children.len())).rev() {
-                        if let Some(layout) = &children[i] {
-                            return layout;
+                        if let Some(spacing) = &children[i] {
+                            return spacing;
                         }
                     }
 
@@ -97,30 +97,30 @@ impl Layout {
 }
 
 #[macro_export]
-macro_rules! layout {
+macro_rules! spacing {
     ([$val:expr; $($child:tt),* $(,)?]) => {
-        Layout::with_children( $val, vec![ $( $crate::optional_layout!($child) ),* ] )
+        Spacing::with_children( $val, vec![ $( $crate::optional_spacing!($child) ),* ] )
     };
 
     ($val:expr) => {
-        Into::<Layout>::into($val)
+        Into::<Spacing>::into($val)
     };
 }
 
 // helper, not public
 #[doc(hidden)]
 #[macro_export]
-macro_rules! optional_layout {
+macro_rules! optional_spacing {
     (_) => {
         None
     };
 
     ([$val:expr; $($child:tt),* $(,)?]) => {
-        Some(Layout::with_children( $val, vec![ $( $crate::optional_layout!($child) ),* ] ))
+        Some(Spacing::with_children( $val, vec![ $( $crate::optional_spacing!($child) ),* ] ))
     };
 
     ($val:expr) => {
-        Some(Into::<Layout>::into($val))
+        Some(Into::<Spacing>::into($val))
     };
 }
 
@@ -136,11 +136,11 @@ struct Styled(Vec<&'static str>);
 
 impl From<Style> for Styled {
     fn from(value: Style) -> Self {
-        use Spacing::*;
+        use Space::*;
         use Style::*;
 
         Self(match value {
-            Spaced => Spacing::iter()
+            Spaced => Space::iter()
                 .map(|spacing| match spacing {
                     Flush => "",
                     Minor => " ",
@@ -148,7 +148,7 @@ impl From<Style> for Styled {
                     Major => "   ",
                 })
                 .collect::<Vec<_>>(),
-            Piped => Spacing::iter()
+            Piped => Space::iter()
                 .map(|spacing| match spacing {
                     Flush => "",
                     Minor => "|",
@@ -161,11 +161,11 @@ impl From<Style> for Styled {
 }
 
 impl Styled {
-    fn space(&self, spacing: Spacing) -> &'static str {
+    fn space(&self, spacing: Space) -> &'static str {
         self.0[spacing as usize]
     }
 
-    fn width(&self, spacing: Spacing) -> usize {
+    fn width(&self, spacing: Space) -> usize {
         self.space(spacing).len()
     }
 }
@@ -202,24 +202,24 @@ impl<'a> Cell<'a> {
 }
 
 impl<'a> Cell<'a> {
-    pub fn layout(&self, layout: &Layout, style: Style) -> impl Display {
+    pub fn layout(&self, spacing: &Spacing, style: Style) -> impl Display {
         let spec: ColSpec = self.into();
 
         let styled = style.into();
-        make_lazy_format!(|f| self.format(f, layout, &styled, &spec))
+        make_lazy_format!(|f| self.format(f, spacing, &styled, &spec))
     }
 
     fn format(
         &self,
         f: &mut std::fmt::Formatter<'_>,
-        layout: &Layout,
+        spacing: &Spacing,
         styled: &Styled,
         spec: &ColSpec,
     ) -> std::fmt::Result {
         use Cell::*;
         use ColSpec::*;
 
-        let spec_width = spec.width(layout, styled);
+        let spec_width = spec.width(spacing, styled);
         match (self, spec) {
             (Aligned(s, align), _spec) => {
                 use Align::*;
@@ -236,7 +236,7 @@ impl<'a> Cell<'a> {
                 write!(f, "{}{}{}", pad(left), s, pad(right))
             }
             (Anchored(s, idx), spec) => {
-                let (spec_idx, spec_trailing) = spec.anchor(layout, styled);
+                let (spec_idx, spec_trailing) = spec.anchor(spacing, styled);
                 let trailing = s.width() - idx;
                 let pad_l = spec_idx - idx;
                 let pad_r = spec_trailing - trailing;
@@ -248,7 +248,7 @@ impl<'a> Cell<'a> {
                 let mut sep = false;
                 let empty_cell = Cell::empty();
 
-                // println!("laying out {:?} using {:?}", cells, layout);
+                // println!("laying out {:?} using {:?}", cells, spacing);
 
                 for (i_child, (cell, spec)) in cells
                     .iter()
@@ -261,16 +261,16 @@ impl<'a> Cell<'a> {
                     .enumerate()
                 {
                     if sep {
-                        write!(f, "{}", styled.space(layout.primary))?
+                        write!(f, "{}", styled.space(spacing.primary))?
                     }
                     sep = true;
 
-                    let child_layout = layout.get_child_layout(i_child);
+                    let child_spacing = spacing.get_child_spacing(i_child);
                     // println!(
                     //     "laying out child {:?} {:?} using {:?}",
-                    //     i_child, cell, child_layout
+                    //     i_child, cell, child_spacing
                     // );
-                    cell.format(f, child_layout, styled, spec)?;
+                    cell.format(f, child_spacing, styled, spec)?;
                 }
                 Ok(())
             }
@@ -281,7 +281,7 @@ impl<'a> Cell<'a> {
                         f.write_str("\n")?;
                     }
                     sep = true;
-                    cell.format(f, layout, styled, spec)?;
+                    cell.format(f, spacing, styled, spec)?;
                 }
                 Ok(())
             }
@@ -292,8 +292,8 @@ impl<'a> Cell<'a> {
 
 impl<'a> Display for Cell<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let layout = Layout::default();
-        write!(f, "{}", self.layout(&layout, Style::default()))
+        let spacing = Spacing::default();
+        write!(f, "{}", self.layout(&spacing, Style::default()))
     }
 }
 
@@ -415,14 +415,14 @@ impl ColSpec {
     }
 
     // return total with, including the column separators
-    fn width(&self, layout: &Layout, styled: &Styled) -> usize {
+    fn width(&self, spacing: &Spacing, styled: &Styled) -> usize {
         use ColSpec::*;
 
         match self {
             Empty => 0,
             Simple(s) => s.width(),
             Composite((s, c)) => {
-                let column_separator_width = styled.width(layout.primary);
+                let column_separator_width = styled.width(spacing.primary);
                 let separator_widths = if c.is_empty() {
                     0
                 } else {
@@ -432,7 +432,7 @@ impl ColSpec {
                     s.as_ref().map_or(0, |s| s.width()),
                     c.iter()
                         .enumerate()
-                        .map(|(i_child, c)| c.width(layout.get_child_layout(i_child), styled))
+                        .map(|(i_child, c)| c.width(spacing.get_child_spacing(i_child), styled))
                         .sum::<usize>()
                         + separator_widths,
                 )
@@ -440,14 +440,14 @@ impl ColSpec {
         }
     }
 
-    fn anchor(&self, layout: &Layout, styled: &Styled) -> (usize, usize) {
+    fn anchor(&self, spacing: &Spacing, styled: &Styled) -> (usize, usize) {
         use ColSpec::*;
 
         match self {
             Empty => (0, 0),
             Simple(s) => s.anchor(),
             Composite((s, _)) => {
-                let width = self.width(layout, styled);
+                let width = self.width(spacing, styled);
                 s.as_ref()
                     .map(|s| s.anchor())
                     .unwrap_or_else(|| degenerate_anchor(Some(width)))
