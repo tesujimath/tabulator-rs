@@ -5,15 +5,15 @@
 //! Generates the output as shown above.
 //!
 //!```
-//! # use tabulator::{Align, Cell};
+//! # use tabulator::{Align, Cell, Gap};
 //!
 //!fn main() {
 //!    use Align::*;
 //!    use Cell::*;
 //!
 //!    let cell = Column(vec![
-//!        Row(vec![("A", Left).into(), Cell::anchored("1.25", 1), ("A99", Right).into()]),
-//!        Row(vec![("B1", Left).into(), Cell::anchored("12.2", 2), ("B", Right).into()]),
+//!        Row(vec![("A", Left).into(), Cell::anchored("1.25", 1), ("A99", Right).into()], Gap::Medium),
+//!        Row(vec![("B1", Left).into(), Cell::anchored("12.2", 2), ("B", Right).into()], Gap::Medium),
 //!    ]);
 //!
 //!    let output = cell.to_string();
@@ -23,11 +23,7 @@ use itertools::Itertools;
 #[allow(unused_imports)] // unsure why there's otherwise a warning here
 use joinery::Joinable;
 use lazy_format::make_lazy_format;
-use std::{
-    borrow::Cow,
-    cmp::{max, min},
-    fmt::Display,
-};
+use std::{borrow::Cow, cmp::max, fmt::Display};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumCount, EnumIter};
 use unicode_width::UnicodeWidthStr;
@@ -39,89 +35,13 @@ pub enum Align {
     Centre,
 }
 
-#[derive(Copy, Clone, EnumCount, EnumIter, Default, Debug)]
-pub enum Space {
+#[derive(Copy, Clone, EnumCount, EnumIter, PartialEq, Eq, PartialOrd, Ord, Default, Debug)]
+pub enum Gap {
     Flush,
     Minor,
     #[default]
     Medium,
     Major,
-}
-
-#[derive(Clone, Default, Debug)]
-/// Spacing is flexible.  If children are not specified, they default to primary.
-/// And the last child spacing is reused for any children beyond what was specified.
-pub struct Spacing {
-    primary: Space,
-    children: Option<Vec<Option<Spacing>>>,
-}
-
-impl From<Space> for Spacing {
-    fn from(value: Space) -> Self {
-        Spacing {
-            primary: value,
-            children: None,
-        }
-    }
-}
-
-impl Spacing {
-    pub fn with_children(primary: Space, children: Vec<Option<Spacing>>) -> Spacing {
-        Spacing {
-            primary,
-            children: Some(children),
-        }
-    }
-
-    // return best-fit spacing for i_child, which is the latest one which has a value, or self
-    fn get_child_spacing(&self, i_child: usize) -> &Spacing {
-        match &self.children {
-            None => self,
-            Some(children) => {
-                if children.is_empty() {
-                    self
-                } else {
-                    // loop back until we find something
-                    for i in (0..min(i_child + 1, children.len())).rev() {
-                        if let Some(spacing) = &children[i] {
-                            return spacing;
-                        }
-                    }
-
-                    // fallback value if nothing found
-                    self
-                }
-            }
-        }
-    }
-}
-
-#[macro_export]
-macro_rules! spacing {
-    ([$val:expr; $($child:tt),* $(,)?]) => {
-        Spacing::with_children( $val, vec![ $( $crate::optional_spacing!($child) ),* ] )
-    };
-
-    ($val:expr) => {
-        Into::<Spacing>::into($val)
-    };
-}
-
-// helper, not public
-#[doc(hidden)]
-#[macro_export]
-macro_rules! optional_spacing {
-    (_) => {
-        None
-    };
-
-    ([$val:expr; $($child:tt),* $(,)?]) => {
-        Some(Spacing::with_children( $val, vec![ $( $crate::optional_spacing!($child) ),* ] ))
-    };
-
-    ($val:expr) => {
-        Some(Into::<Spacing>::into($val))
-    };
 }
 
 #[derive(Copy, Clone, Default, Debug)]
@@ -131,25 +51,25 @@ pub enum Style {
     Piped,
 }
 
-/// Indexed by Spacing as usize
+/// Indexed by Gap as usize
 struct Styled(Vec<&'static str>);
 
 impl From<Style> for Styled {
     fn from(value: Style) -> Self {
-        use Space::*;
+        use Gap::*;
         use Style::*;
 
         Self(match value {
-            Spaced => Space::iter()
-                .map(|spacing| match spacing {
+            Spaced => Gap::iter()
+                .map(|gap| match gap {
                     Flush => "",
                     Minor => " ",
                     Medium => "  ",
                     Major => "   ",
                 })
                 .collect::<Vec<_>>(),
-            Piped => Space::iter()
-                .map(|spacing| match spacing {
+            Piped => Gap::iter()
+                .map(|gap| match gap {
                     Flush => "",
                     Minor => "|",
                     Medium => "||",
@@ -161,12 +81,12 @@ impl From<Style> for Styled {
 }
 
 impl Styled {
-    fn space(&self, spacing: Space) -> &'static str {
-        self.0[spacing as usize]
+    fn space(&self, gap: Gap) -> &'static str {
+        self.0[gap as usize]
     }
 
-    fn width(&self, spacing: Space) -> usize {
-        self.space(spacing).len()
+    fn width(&self, gap: Gap) -> usize {
+        self.space(gap).len()
     }
 }
 
@@ -174,7 +94,7 @@ impl Styled {
 pub enum Cell<'a> {
     Aligned(Cow<'a, str>, Align),
     Anchored(Cow<'a, str>, usize), // index of character which is anchored, e.g. the decimal point
-    Row(Vec<Cell<'a>>),
+    Row(Vec<Cell<'a>>, Gap),
     Column(Vec<Cell<'a>>),
 }
 
@@ -202,24 +122,23 @@ impl<'a> Cell<'a> {
 }
 
 impl<'a> Cell<'a> {
-    pub fn layout(&self, spacing: &Spacing, style: Style) -> impl Display {
+    pub fn layout(&self, style: Style) -> impl Display {
         let spec: ColSpec = self.into();
 
         let styled = style.into();
-        make_lazy_format!(|f| self.format(f, spacing, &styled, &spec))
+        make_lazy_format!(|f| self.format(f, &styled, &spec))
     }
 
     fn format(
         &self,
         f: &mut std::fmt::Formatter<'_>,
-        spacing: &Spacing,
         styled: &Styled,
         spec: &ColSpec,
     ) -> std::fmt::Result {
         use Cell::*;
         use ColSpec::*;
 
-        let spec_width = spec.width(spacing, styled);
+        let spec_width = spec.width(styled);
         match (self, spec) {
             (Aligned(s, align), _spec) => {
                 use Align::*;
@@ -236,41 +155,29 @@ impl<'a> Cell<'a> {
                 write!(f, "{}{}{}", pad(left), s, pad(right))
             }
             (Anchored(s, idx), spec) => {
-                let (spec_idx, spec_trailing) = spec.anchor(spacing, styled);
+                let (spec_idx, spec_trailing) = spec.anchor(styled);
                 let trailing = s.width() - idx;
                 let pad_l = spec_idx - idx;
                 let pad_r = spec_trailing - trailing;
                 write!(f, "{}{}{}", pad(pad_l), s, pad(pad_r))
             }
-            (Row(cells), Composite((_spec_s, spec_c))) => {
+            (Row(cells, _row_g), Composite((_spec_s, spec_c, spec_g))) => {
                 use itertools::EitherOrBoth::*;
 
                 let mut sep = false;
                 let empty_cell = Cell::empty();
 
-                // println!("laying out {:?} using {:?}", cells, spacing);
-
-                for (i_child, (cell, spec)) in cells
-                    .iter()
-                    .zip_longest(spec_c)
-                    .map(|x| match x {
-                        Both(cell, spec) => (cell, spec),
-                        Left(_cell) => todo!("cell without spec"),
-                        Right(spec) => (&empty_cell, spec),
-                    })
-                    .enumerate()
-                {
+                for (cell, spec) in cells.iter().zip_longest(spec_c).map(|x| match x {
+                    Both(cell, spec) => (cell, spec),
+                    Left(_cell) => todo!("cell without spec"),
+                    Right(spec) => (&empty_cell, spec),
+                }) {
                     if sep {
-                        write!(f, "{}", styled.space(spacing.primary))?
+                        write!(f, "{}", styled.space(*spec_g))?
                     }
                     sep = true;
 
-                    let child_spacing = spacing.get_child_spacing(i_child);
-                    // println!(
-                    //     "laying out child {:?} {:?} using {:?}",
-                    //     i_child, cell, child_spacing
-                    // );
-                    cell.format(f, child_spacing, styled, spec)?;
+                    cell.format(f, styled, spec)?;
                 }
                 Ok(())
             }
@@ -281,7 +188,7 @@ impl<'a> Cell<'a> {
                         f.write_str("\n")?;
                     }
                     sep = true;
-                    cell.format(f, spacing, styled, spec)?;
+                    cell.format(f, styled, spec)?;
                 }
                 Ok(())
             }
@@ -292,8 +199,7 @@ impl<'a> Cell<'a> {
 
 impl<'a> Display for Cell<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let spacing = Spacing::default();
-        write!(f, "{}", self.layout(&spacing, Style::default()))
+        write!(f, "{}", self.layout(Style::default()))
     }
 }
 
@@ -374,7 +280,7 @@ enum ColSpec {
     #[default]
     Empty,
     Simple(SingleColSpec),
-    Composite((Option<SingleColSpec>, Vec<ColSpec>)),
+    Composite((Option<SingleColSpec>, Vec<ColSpec>, Gap)),
 }
 
 impl ColSpec {
@@ -387,7 +293,7 @@ impl ColSpec {
             (s, Empty) => s,
             (Simple(s0), Simple(s1)) => Simple(s0.merge(s1)),
 
-            (Composite((s0, c0)), Composite((s1, c1))) => {
+            (Composite((s0, c0, g0)), Composite((s1, c1, g1))) => {
                 let s = match (s0, s1) {
                     (Some(s0), Some(s1)) => Some(s0.merge(s1)),
                     (s0, None) => s0,
@@ -403,26 +309,28 @@ impl ColSpec {
                             Right(c1) => c1,
                         })
                         .collect::<Vec<_>>(),
+                    max(g0, g1),
                 ))
             }
-            (Simple(s0), Composite((None, c1))) | (Composite((None, c1)), Simple(s0)) => {
-                Composite((Some(s0), c1))
+            (Simple(s0), Composite((None, c1, g1))) | (Composite((None, c1, g1)), Simple(s0)) => {
+                Composite((Some(s0), c1, g1))
             }
-            (Simple(s0), Composite((Some(s1), c1))) | (Composite((Some(s1), c1)), Simple(s0)) => {
-                Composite((Some(s0.merge(s1)), c1))
+            (Simple(s0), Composite((Some(s1), c1, g1)))
+            | (Composite((Some(s1), c1, g1)), Simple(s0)) => {
+                Composite((Some(s0.merge(s1)), c1, g1))
             }
         }
     }
 
     // return total with, including the column separators
-    fn width(&self, spacing: &Spacing, styled: &Styled) -> usize {
+    fn width(&self, styled: &Styled) -> usize {
         use ColSpec::*;
 
         match self {
             Empty => 0,
             Simple(s) => s.width(),
-            Composite((s, c)) => {
-                let column_separator_width = styled.width(spacing.primary);
+            Composite((s, c, g)) => {
+                let column_separator_width = styled.width(*g);
                 let separator_widths = if c.is_empty() {
                     0
                 } else {
@@ -430,24 +338,20 @@ impl ColSpec {
                 };
                 max(
                     s.as_ref().map_or(0, |s| s.width()),
-                    c.iter()
-                        .enumerate()
-                        .map(|(i_child, c)| c.width(spacing.get_child_spacing(i_child), styled))
-                        .sum::<usize>()
-                        + separator_widths,
+                    c.iter().map(|c| c.width(styled)).sum::<usize>() + separator_widths,
                 )
             }
         }
     }
 
-    fn anchor(&self, spacing: &Spacing, styled: &Styled) -> (usize, usize) {
+    fn anchor(&self, styled: &Styled) -> (usize, usize) {
         use ColSpec::*;
 
         match self {
             Empty => (0, 0),
             Simple(s) => s.anchor(),
-            Composite((s, _)) => {
-                let width = self.width(spacing, styled);
+            Composite((s, _c, _g)) => {
+                let width = self.width(styled);
                 s.as_ref()
                     .map(|s| s.anchor())
                     .unwrap_or_else(|| degenerate_anchor(Some(width)))
@@ -467,9 +371,9 @@ impl<'a> From<&Cell<'a>> for ColSpec {
                 let w = s.width();
                 Simple(SingleColSpec::from_anchor(*idx, w - idx))
             }
-            Row(cells) => {
+            Row(cells, g) => {
                 let cs = cells.iter().map(Into::<ColSpec>::into).collect::<Vec<_>>();
-                Composite((None, cs))
+                Composite((None, cs, *g))
             }
             Column(cells) => cells
                 .iter()

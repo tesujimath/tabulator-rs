@@ -24,7 +24,7 @@ impl<'a> From<Decimal> for Cell<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Align, Cell, Spacing, Style};
+    use crate::{Align, Cell, Gap};
     use joinery::Joinable;
     use rust_decimal::Decimal;
     use test_case::test_case;
@@ -46,16 +46,15 @@ mod tests {
     }
 
     #[test_case(Column(vec![
-        Row(vec![("Assets:Bank:Current", Left).into(), "350.75".parse::<Decimal>().unwrap().into(), ("NZD", Left).into(), ("Howzah!", Right).into()]),
-        Row(vec![("Assets:Bank:Investment", Left).into(), "2.25".parse::<Decimal>().unwrap().into(), ("NZD", Left).into(), ("Skint", Right).into()]),
+        Row(vec![("Assets:Bank:Current", Left).into(), "350.75".parse::<Decimal>().unwrap().into(), ("NZD", Left).into(), ("Howzah!", Right).into()], Gap::Minor),
+        Row(vec![("Assets:Bank:Investment", Left).into(), "2.25".parse::<Decimal>().unwrap().into(), ("NZD", Left).into(), ("Skint", Right).into()], Gap::Minor),
     ]), vec![
         "Assets:Bank:Current    350.75 NZD Howzah!",
         "Assets:Bank:Investment   2.25 NZD   Skint",
         ]
 )]
     fn bank_accounts(cell: Cell, expected_lines: Vec<&str>) {
-        let spacing = Spacing::Minor.into();
-        let result = cell.spacing(Some(&spacing), Style::default()).to_string();
+        let result = cell.to_string();
         let expected = expected_lines.join_with("\n").to_string();
         assert_eq!(&result, &expected);
     }

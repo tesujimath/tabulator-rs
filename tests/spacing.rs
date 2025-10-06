@@ -1,12 +1,12 @@
 #[allow(unused_imports)] // unsure why there's otherwise a warning here
 use joinery::Joinable;
-use tabulator::{spacing, Align, Cell, Space, Spacing, Style};
+use tabulator::{Align, Cell, Gap, Style};
 use test_case::test_case;
 use Align::*;
 use Cell::*;
 
 #[test_case(("Letsa go Mario!", Left).into(), r#"Letsa go Mario!"#)]
-#[test_case(Row(vec![("Letsa go Mario!", Left).into(), ("OK", Left).into()]), r#"Letsa go Mario!  OK"#)]
+#[test_case(Row(vec![("Letsa go Mario!", Left).into(), ("OK", Left).into()], Gap::Medium), r#"Letsa go Mario!  OK"#)]
 fn default_style(cell: Cell, expected: &str) {
     let result = cell.to_string();
     assert_eq!(&result, expected);
@@ -21,10 +21,12 @@ fn left_justified_strings(rows: Vec<Vec<&str>>, expected: &str) {
     let cell = Column(
         rows.iter()
             .map(|row| {
-                Row(row
-                    .iter()
-                    .map(|s| (s.to_string(), Left).into())
-                    .collect::<Vec<_>>())
+                Row(
+                    row.iter()
+                        .map(|s| (s.to_string(), Left).into())
+                        .collect::<Vec<_>>(),
+                    Gap::Medium,
+                )
             })
             .collect::<Vec<_>>(),
     );
@@ -40,7 +42,12 @@ D     E1  F999"#)]
 fn left_justified_strs(rows: Vec<Vec<&str>>, expected: &str) {
     let cell = Column(
         rows.iter()
-            .map(|row| Row(row.iter().map(|s| (*s, Left).into()).collect::<Vec<_>>()))
+            .map(|row| {
+                Row(
+                    row.iter().map(|s| (*s, Left).into()).collect::<Vec<_>>(),
+                    Gap::Medium,
+                )
+            })
             .collect::<Vec<_>>(),
     );
     let result = cell.to_string();
@@ -55,7 +62,12 @@ fn left_justified_strs(rows: Vec<Vec<&str>>, expected: &str) {
 fn right_justified_strs(rows: Vec<Vec<&str>>, expected: &str) {
     let cell = Column(
         rows.iter()
-            .map(|row| Row(row.iter().map(|s| (*s, Right).into()).collect::<Vec<_>>()))
+            .map(|row| {
+                Row(
+                    row.iter().map(|s| (*s, Right).into()).collect::<Vec<_>>(),
+                    Gap::Medium,
+                )
+            })
             .collect::<Vec<_>>(),
     );
     let result = cell.to_string();
@@ -81,7 +93,12 @@ fn right_justified_strs(rows: Vec<Vec<&str>>, expected: &str) {
 fn empty_lines_space_filled(rows: Vec<Vec<&str>>, expected_lines: Vec<&str>) {
     let cell = Column(
         rows.iter()
-            .map(|row| Row(row.iter().map(|s| (*s, Right).into()).collect::<Vec<_>>()))
+            .map(|row| {
+                Row(
+                    row.iter().map(|s| (*s, Right).into()).collect::<Vec<_>>(),
+                    Gap::Medium,
+                )
+            })
             .collect::<Vec<_>>(),
     );
     let result = cell.to_string();
@@ -97,7 +114,12 @@ fn empty_lines_space_filled(rows: Vec<Vec<&str>>, expected_lines: Vec<&str>) {
 fn centred_strs(rows: Vec<Vec<&str>>, expected: &str) {
     let cell = Column(
         rows.iter()
-            .map(|row| Row(row.iter().map(|s| (*s, Centre).into()).collect::<Vec<_>>()))
+            .map(|row| {
+                Row(
+                    row.iter().map(|s| (*s, Centre).into()).collect::<Vec<_>>(),
+                    Gap::Medium,
+                )
+            })
             .collect::<Vec<_>>(),
     );
     let result = cell.to_string();
@@ -105,8 +127,8 @@ fn centred_strs(rows: Vec<Vec<&str>>, expected: &str) {
 }
 
 #[test_case(Column(vec![
-        Row(vec![("A", Left).into(), Cell::anchored("1.25", 1), ("A99", Right).into()]),
-        Row(vec![("B1", Left).into(), Cell::anchored("12.2", 2), ("B", Right).into()]),
+        Row(vec![("A", Left).into(), Cell::anchored("1.25", 1), ("A99", Right).into()], Gap::Medium),
+        Row(vec![("B1", Left).into(), Cell::anchored("12.2", 2), ("B", Right).into()], Gap::Medium),
     ]), vec![
         "A    1.25  A99",
         "B1  12.2     B",
@@ -119,8 +141,8 @@ fn anchored(cell: Cell, expected_lines: Vec<&str>) {
 }
 
 #[test_case(Column(vec![
-        Row(vec![Row(vec![("A1", Left).into(), ("B1", Left).into()]), ("C1", Left).into()]),
-        Row(vec![("A2", Left).into(), ("B", Right).into(), ("C", Left).into()]),
+        Row(vec![Row(vec![("A1", Left).into(), ("B1", Left).into()], Gap::Medium), ("C1", Left).into()], Gap::Medium),
+        Row(vec![("A2", Left).into(), ("B", Right).into(), ("C", Left).into()], Gap::Medium),
     ]), vec![
         "A1  B1  C1   ",
         "A2       B  C",
@@ -133,10 +155,10 @@ fn merge_without_anchor(cell: Cell, expected_lines: Vec<&str>) {
 }
 
 #[test_case(Column(vec![
-        Row(vec![Row(vec![("A1", Left).into(), ("B1", Left).into()]), ("C1a", Left).into(), ("D1-abc", Left).into()]),
-        Row(vec![("A2", Left).into(), Cell::anchored("12.50", 2), ("D", Left).into()]),
-        Row(vec![("A3", Left).into(), Cell::anchored("17.305", 2), ("D3", Right).into()]),
-        Row(vec![("A4", Right).into(), ("C4", Right).into(), ("D4", Right).into()]),
+        Row(vec![Row(vec![("A1", Left).into(), ("B1", Left).into()], Gap::Medium), ("C1a", Left).into(), ("D1-abc", Left).into()], Gap::Medium),
+        Row(vec![("A2", Left).into(), Cell::anchored("12.50", 2), ("D", Left).into()], Gap::Medium),
+        Row(vec![("A3", Left).into(), Cell::anchored("17.305", 2), ("D3", Right).into()], Gap::Medium),
+        Row(vec![("A4", Right).into(), ("C4", Right).into(), ("D4", Right).into()], Gap::Medium),
     ]), vec![
         "A1  B1  C1a     D1-abc",
         "A2      12.50   D     ",
@@ -150,30 +172,25 @@ fn merge_with_anchor(cell: Cell, expected_lines: Vec<&str>) {
     assert_eq!(&result, &expected);
 }
 
-#[test_case(Row(vec![Row(vec![("A", Left).into(), ("B", Left).into()]),Row(vec![("C", Left).into(), ("D", Left).into()])]),
+#[test_case(Row(vec![Row(vec![("A", Left).into(), ("B", Left).into()], Gap::Medium),Row(vec![("C", Left).into(), ("D", Left).into()], Gap::Medium)], Gap::Medium),
         r#"A||B||C||D"#)]
 fn styled(cell: Cell, expected: &str) {
     use Style::*;
-    let spacing = Spacing::default();
-
-    let result = cell.layout(&spacing, Piped).to_string();
+    let result = cell.layout(Piped).to_string();
     assert_eq!(&result, expected);
 }
 
 #[test_case(Column(vec![
-        Row(vec![("A", Left).into(), Row(vec![("B1", Left).into(), ("C1", Left).into()]), Row(vec![("D1a", Left).into(), ("E1-abc", Left).into()]), ("F", Right).into()]),
-        Row(vec![("A2", Left).into(), Row(vec![("B1", Left).into(), ("C1", Left).into()]), Row(vec![("D1a", Left).into(), ("E1-abc", Left).into()]), ("F2", Right).into()]),
+        Row(vec![("A", Left).into(), Row(vec![("B1", Left).into(), ("C1", Left).into()], Gap::Medium), Row(vec![("D1a", Left).into(), ("E1-abc", Left).into()], Gap::Minor), ("F", Right).into()], Gap::Major),
+        Row(vec![("A2", Left).into(), Row(vec![("B1", Left).into(), ("C1", Left).into()], Gap::Medium), Row(vec![("D1a", Left).into(), ("E1-abc", Left).into()], Gap::Minor), ("F2", Right).into()], Gap::Major),
     ]), vec![
         "A    B1  C1   D1a E1-abc    F",
         "A2   B1  C1   D1a E1-abc   F2",
         ]
 )]
 fn simple_nested_spacing(cell: Cell, expected_lines: Vec<&str>) {
-    use Space::*;
-
-    let spacing = spacing!([Major; _, Medium, Minor]);
     // println!("spacing {:?}", &spacing);
-    let result = cell.layout(&spacing, Style::default()).to_string();
+    let result = cell.layout(Style::default()).to_string();
     let expected = expected_lines.join_with("\n").to_string();
     assert_eq!(&result, &expected);
 }
@@ -187,36 +204,19 @@ fn simple_nested_spacing(cell: Cell, expected_lines: Vec<&str>) {
                     ("C1", Left).into(),
                     Row(vec![
                         ("X1", Left).into(),
-                        ("Y1", Left).into()]),
-                    ("D1", Left).into()]),
-                ("E1", Left).into()]),
+                        ("Y1", Left).into()], Gap::Flush),
+                    ("D1", Left).into()], Gap::Minor),
+                ("E1", Left).into()], Gap::Medium),
             Row(vec![
                 ("F1", Left).into(),
-                ("G1", Left).into()]),
-            ("H1", Right).into()]),
+                ("G1", Left).into()], Gap::Minor),
+            ("H1", Right).into()], Gap::Major),
     ]), vec![
         "A1   B1  C1 X1Y1 D1  E1   F1 G1   H1",
         ]
 )]
 fn doubly_nested_spacing(cell: Cell, expected_lines: Vec<&str>) {
-    use Space::*;
-
-    let spacing = spacing!([ Major;
-        _,
-        [
-            Medium;
-                _,
-                [
-                    Minor;
-                    _, Flush, _
-                ],
-                _
-            ],
-        Minor,
-        _
-    ]);
-    // println!("spacing {:?}", &spacing);
-    let result = cell.layout(&spacing, Style::default()).to_string();
+    let result = cell.layout(Style::default()).to_string();
     let expected = expected_lines.join_with("\n").to_string();
     assert_eq!(&result, &expected);
 }
@@ -228,28 +228,24 @@ fn doubly_nested_spacing(cell: Cell, expected_lines: Vec<&str>) {
                 ("BA", Left).into(),
                 Row(vec![
                     ("BBA", Left).into(),
-                    ("BBB", Left).into()]),
-               ("BC", Left).into()]),
+                    ("BBB", Left).into()], Gap::Minor),
+               ("BC", Left).into()], Gap::Medium),
             Row(vec![
                 ("CA", Left).into(),
                 Row(vec![
                     ("CBA", Left).into(),
-                    ("CBB", Left).into()]),
-                ("CC", Left).into()]),
+                    ("CBB", Left).into()], Gap::Minor),
+                ("CC", Left).into()], Gap::Medium),
             Row(vec![
                 ("DA", Left).into(),
-                ("DB", Left).into()]),
-            ("X", Right).into()]),
+                ("DB", Left).into()], Gap::Medium),
+            ("X", Right).into()], Gap::Major),
     vec![
         "A   BA  BBA BBB  BC   CA  CBA CBB  CC   DA  DB   X",
         ]
 )]
 fn nested_spacing_repeat(cell: Cell, expected_lines: Vec<&str>) {
-    use Space::*;
-
-    let spacing = spacing!([Major; _, [Medium; Minor]]);
-    // println!("spacing {:?}", &spacing);
-    let result = cell.layout(&spacing, Style::default()).to_string();
+    let result = cell.layout(Style::default()).to_string();
     let expected = expected_lines.join_with("\n").to_string();
     assert_eq!(&result, &expected);
 }
