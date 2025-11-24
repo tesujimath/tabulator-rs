@@ -6,11 +6,11 @@ The motivation to build such a thing is [Beancount Lima](https://github.com/tesu
 
 ## Example Output
 
-### Simple case with manual anchoring
+### Simple left/right and decimal point alignment
 
 ```text
 A   1.25 A99
-B1 12.2    B
+B1 12.5    B
 ```
 
 ### Using `rust_decimal` auto-anchor

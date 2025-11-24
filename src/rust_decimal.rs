@@ -24,7 +24,7 @@ impl<'a> From<Decimal> for Cell<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Align, Cell, Gap};
+    use crate::{Align, Cell};
     use joinery::Joinable;
     use rust_decimal::Decimal;
     use test_case::test_case;
@@ -45,9 +45,9 @@ mod tests {
         }
     }
 
-    #[test_case(Column(vec![
-        Row(vec![("Assets:Bank:Current", Left).into(), "350.75".parse::<Decimal>().unwrap().into(), ("NZD", Left).into(), ("Howzah!", Right).into()], Gap::Minor),
-        Row(vec![("Assets:Bank:Investment", Left).into(), "2.25".parse::<Decimal>().unwrap().into(), ("NZD", Left).into(), ("Skint", Right).into()], Gap::Minor),
+    #[test_case(Stack(vec![
+        Row(vec![("Assets:Bank:Current", Left).into(), "350.75".parse::<Decimal>().unwrap().into(), ("NZD", Left).into(), ("Howzah!", Right).into()], SMALL_SPACE),
+        Row(vec![("Assets:Bank:Investment", Left).into(), "2.25".parse::<Decimal>().unwrap().into(), ("NZD", Left).into(), ("Skint", Right).into()], SMALL_SPACE),
     ]), vec![
         "Assets:Bank:Current    350.75 NZD Howzah!",
         "Assets:Bank:Investment   2.25 NZD   Skint",
@@ -58,4 +58,6 @@ mod tests {
         let expected = expected_lines.join_with("\n").to_string();
         assert_eq!(&result, &expected);
     }
+
+    const SMALL_SPACE: &str = " ";
 }

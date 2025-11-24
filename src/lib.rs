@@ -5,15 +5,15 @@
 //! Generates the output as shown above.
 //!
 //!```
-//! # use tabulator::{Align, Cell, Gap};
+//! # use tabulator::{Align, Cell};
 //!
 //!fn main() {
 //!    use Align::*;
 //!    use Cell::*;
 //!
-//!    let cell = Column(vec![
-//!        Row(vec![("A", Left).into(), Cell::anchored("1.25", 1), ("A99", Right).into()], Gap::Medium),
-//!        Row(vec![("B1", Left).into(), Cell::anchored("12.2", 2), ("B", Right).into()], Gap::Medium),
+//!    let cell = Stack(vec![
+//!        Row(vec![("A", Left).into(), 1.25.into(), ("A99", Right).into()], "  "),
+//!        Row(vec![("B1", Left).into(), 12.5.into(), ("B", Right).into()], "  "),
 //!    ]);
 //!
 //!    let output = cell.to_string();
@@ -23,79 +23,24 @@ use itertools::Itertools;
 #[allow(unused_imports)] // unsure why there's otherwise a warning here
 use joinery::Joinable;
 use lazy_format::make_lazy_format;
-use std::{borrow::Cow, cmp::max, fmt::Display};
-use strum::IntoEnumIterator;
-use strum_macros::{EnumCount, EnumIter};
+use std::{borrow::Cow, cmp::max, collections::VecDeque, fmt::Display};
 use unicode_width::UnicodeWidthStr;
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Align {
     Left,
     Right,
     Centre,
 }
 
-#[derive(Copy, Clone, EnumCount, EnumIter, PartialEq, Eq, PartialOrd, Ord, Default, Debug)]
-pub enum Gap {
-    Flush,
-    Minor,
-    #[default]
-    Medium,
-    Major,
-}
-
-#[derive(Copy, Clone, Default, Debug)]
-pub enum Style {
-    #[default]
-    Spaced,
-    Piped,
-}
-
-/// Indexed by Gap as usize
-struct Styled(Vec<&'static str>);
-
-impl From<Style> for Styled {
-    fn from(value: Style) -> Self {
-        use Gap::*;
-        use Style::*;
-
-        Self(match value {
-            Spaced => Gap::iter()
-                .map(|gap| match gap {
-                    Flush => "",
-                    Minor => " ",
-                    Medium => "  ",
-                    Major => "   ",
-                })
-                .collect::<Vec<_>>(),
-            Piped => Gap::iter()
-                .map(|gap| match gap {
-                    Flush => "",
-                    Minor => "|",
-                    Medium => "||",
-                    Major => "|||",
-                })
-                .collect::<Vec<_>>(),
-        })
-    }
-}
-
-impl Styled {
-    fn space(&self, gap: Gap) -> &'static str {
-        self.0[gap as usize]
-    }
-
-    fn width(&self, gap: Gap) -> usize {
-        self.space(gap).len()
-    }
-}
-
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub enum Cell<'a> {
+    #[default]
+    Empty,
     Aligned(Cow<'a, str>, Align),
     Anchored(Cow<'a, str>, usize), // index of character which is anchored, e.g. the decimal point
-    Row(Vec<Cell<'a>>, Gap),
-    Column(Vec<Cell<'a>>),
+    Row(Vec<Cell<'a>>, &'static str), // horizontal sequence with gutter
+    Stack(Vec<Cell<'a>>),          // vertical stack
 }
 
 impl<'a, S> From<(S, Align)> for Cell<'a>
@@ -108,10 +53,6 @@ where
 }
 
 impl<'a> Cell<'a> {
-    pub fn empty() -> Self {
-        Cell::Aligned(Cow::Borrowed(""), Align::Left)
-    }
-
     /// Return the string anchored at position `idx`.
     pub fn anchored<S>(s: S, idx: usize) -> Self
     where
@@ -121,85 +62,293 @@ impl<'a> Cell<'a> {
     }
 }
 
-impl<'a> Cell<'a> {
-    pub fn layout(&self, style: Style) -> impl Display {
-        let spec: ColSpec = self.into();
+#[derive(Clone, Debug)]
+struct Graticule {
+    width: usize,
+    anchor: Option<(usize, usize)>,                   // idx, trailing
+    children: Option<(Vec<Graticule>, &'static str)>, // horizontal sequence with gutter
+}
 
-        let styled = style.into();
-        make_lazy_format!(|f| self.format(f, &styled, &spec))
-    }
+#[derive(Clone, Debug)]
+enum Remaining<'a> {
+    Empty,
+    Aligned(&'a str, Align),
+    Anchored(&'a str, usize), // index of character which is anchored, e.g. the decimal point
+    Row(Vec<Remaining<'a>>),  // horizontal sequence only, gutter removed to Graticule
+    Stack(VecDeque<Remaining<'a>>), // vertical stack
+}
 
-    fn format(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        styled: &Styled,
-        spec: &ColSpec,
-    ) -> std::fmt::Result {
+impl From<&Cell<'_>> for Graticule {
+    fn from(value: &Cell<'_>) -> Self {
         use Cell::*;
-        use ColSpec::*;
 
-        let spec_width = spec.width(styled);
-        match (self, spec) {
-            (Aligned(s, align), _spec) => {
-                use Align::*;
+        match value {
+            Empty => Graticule {
+                width: 0,
+                anchor: None,
+                children: None,
+            },
 
-                let total = spec_width - s.width();
-                let (left, right) = match align {
-                    Left => (0, total),
-                    Right => (total, 0),
-                    Centre => {
-                        let left = total / 2;
-                        (left, total - left)
-                    }
-                };
-                write!(f, "{}{}{}", pad(left), s, pad(right))
-            }
-            (Anchored(s, idx), spec) => {
-                let (spec_idx, spec_trailing) = spec.anchor(styled);
-                let trailing = s.width() - idx;
-                let pad_l = spec_idx - idx;
-                let pad_r = spec_trailing - trailing;
-                write!(f, "{}{}{}", pad(pad_l), s, pad(pad_r))
-            }
-            (Row(cells, _row_g), Composite((_spec_s, spec_c, spec_g))) => {
-                use itertools::EitherOrBoth::*;
+            Aligned(s, _) => Graticule {
+                width: s.width(),
+                anchor: None,
+                children: None,
+            },
 
-                let mut sep = false;
-                let empty_cell = Cell::empty();
-
-                for (cell, spec) in cells.iter().zip_longest(spec_c).map(|x| match x {
-                    Both(cell, spec) => (cell, spec),
-                    Left(_cell) => todo!("cell without spec"),
-                    Right(spec) => (&empty_cell, spec),
-                }) {
-                    if sep {
-                        write!(f, "{}", styled.space(*spec_g))?
-                    }
-                    sep = true;
-
-                    cell.format(f, styled, spec)?;
+            Anchored(s, idx) => {
+                let width = s.width();
+                Graticule {
+                    width,
+                    anchor: Some((*idx, width - *idx)),
+                    children: None,
                 }
-                Ok(())
             }
-            (Column(cells), spec) => {
-                let mut sep = false;
-                for cell in cells {
-                    if sep {
-                        f.write_str("\n")?;
-                    }
-                    sep = true;
-                    cell.format(f, styled, spec)?;
+
+            Row(cells, gutter) => {
+                let children = cells
+                    .iter()
+                    .map(Into::<Graticule>::into)
+                    .collect::<Vec<_>>();
+                let width = children.iter().map(|child| child.width).sum::<usize>()
+                    + total_gutter(gutter, children.len());
+                Graticule {
+                    width,
+                    anchor: None,
+                    children: Some((children, gutter)),
                 }
-                Ok(())
             }
-            _ => todo!("mismatched cell {:?} and spec {:?}", self, &spec),
+
+            Stack(cells) => cells
+                .iter()
+                .map(Into::<Graticule>::into)
+                .fold(Graticule::empty(), Graticule::merge),
+        }
+    }
+}
+
+impl<'a, 'c> From<&'c Cell<'a>> for Remaining<'a>
+where
+    'c: 'a,
+{
+    fn from(value: &'c Cell<'a>) -> Self {
+        use Cell::*;
+
+        match value {
+            Empty => Remaining::Empty,
+
+            Aligned(s, align) => Remaining::Aligned(s.as_ref(), *align),
+
+            Anchored(s, idx) => Remaining::Anchored(s.as_ref(), *idx),
+
+            Row(cells, _gutter) => {
+                let children = cells
+                    .iter()
+                    .map(Into::<Remaining>::into)
+                    .collect::<Vec<_>>();
+
+                Remaining::Row(children)
+            }
+
+            Stack(cells) => {
+                let children = cells
+                    .iter()
+                    .map(Into::<Remaining>::into)
+                    .collect::<VecDeque<_>>();
+
+                Remaining::Stack(children)
+            }
         }
     }
 }
 
 impl<'a> Display for Cell<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.layout(Style::default()))
+        let graticule: Graticule = self.into();
+        let mut remaining: Remaining = self.into();
+
+        // TODO remove
+        println!(
+            "Cell {:?} into Graticule {:?}, Remaining {:?}",
+            self, &graticule, &remaining
+        );
+
+        let mut first_line = true;
+        while !remaining.is_empty() {
+            if !first_line {
+                f.write_str("\n")?;
+            }
+            first_line = false;
+            remaining = remaining.format(f, &graticule)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> Remaining<'a> {
+    fn format(
+        self,
+        f: &mut std::fmt::Formatter<'_>,
+        g: &Graticule,
+    ) -> Result<Remaining<'a>, std::fmt::Error> {
+        use Remaining::*;
+
+        Ok(match self {
+            Empty => {
+                write!(f, "{}", pad(g.width))?;
+                Empty
+            }
+
+            Aligned(s, align) => {
+                use Align::*;
+
+                let total_pad = g.width - s.width();
+                let (pad_l, pad_r) = match align {
+                    Left => (0, total_pad),
+                    Right => (total_pad, 0),
+                    Centre => {
+                        let pad_l = total_pad / 2;
+                        (pad_l, total_pad - pad_l)
+                    }
+                };
+                write!(f, "{}{}{}", pad(pad_l), s, pad(pad_r))?;
+                Empty
+            }
+
+            Anchored(s, idx) => {
+                let (layout_idx, layout_trailing) = g.anchor.unwrap(); // TODO don't think this can fail
+                let trailing = s.width() - idx;
+                let pad_l = layout_idx - idx;
+                let pad_r = layout_trailing - trailing;
+                write!(f, "{}{}{}", pad(pad_l), s, pad(pad_r))?;
+                Empty
+            }
+
+            Row(children) => {
+                if children.is_empty() {
+                    write!(f, "{}", pad(g.width))?;
+                    Empty
+                } else {
+                    use itertools::EitherOrBoth::*;
+
+                    let (g_children, gutter) = g.children.as_ref().unwrap();
+                    let remaining = children
+                        .into_iter()
+                        .zip_longest(g_children)
+                        .enumerate()
+                        .map(|(i, x)| match x {
+                            Both(child, g_child) => (i, (child, g_child)),
+                            Left(_child) => panic!("impossible"),
+                            Right(g_child) => (i, (Empty, g_child)), // graticule is longer than row, so extend with empty
+                        })
+                        .map(|(i, (child, g_child))| {
+                            if i > 0 {
+                                write!(f, "{}", gutter)
+                            } else {
+                                Ok(())
+                            }
+                            .and_then(|_| child.format(f, g_child))
+                        })
+                        .collect::<Result<Vec<_>, std::fmt::Error>>()?;
+
+                    if remaining.iter().all(|layout| layout.is_empty()) {
+                        Empty
+                    } else {
+                        Row(remaining)
+                    }
+                }
+            }
+
+            Stack(mut children) => {
+                if let Some(child) = children.pop_front() {
+                    let remaining = child.format(f, g)?;
+                    if !remaining.is_empty() {
+                        children.push_front(remaining);
+                    }
+                    if children.iter().all(|layout| layout.is_empty()) {
+                        Empty
+                    } else {
+                        Stack(children)
+                    }
+                } else {
+                    write!(f, "{}", pad(g.width))?;
+                    Empty
+                }
+            }
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        matches!(&self, Remaining::Empty)
+    }
+}
+
+impl Graticule {
+    fn empty() -> Graticule {
+        Graticule {
+            width: 0,
+            anchor: None,
+            children: None,
+        }
+    }
+
+    fn merge(self: Graticule, other: Graticule) -> Graticule {
+        let Graticule {
+            width: w0,
+            anchor: a0,
+            children: children0,
+        } = self;
+        let Graticule {
+            width: w1,
+            anchor: a1,
+            children: children1,
+        } = other;
+
+        let children = match (children0, children1) {
+            (Some((g0s, gutter0)), Some((g1s, gutter1))) => {
+                use itertools::EitherOrBoth::*;
+
+                let children = g0s
+                    .into_iter()
+                    .zip_longest(g1s)
+                    .map(|x| match x {
+                        Both(g0, g1) => g0.merge(g1),
+                        Left(g) => g,
+                        Right(g) => g,
+                    })
+                    .collect::<Vec<_>>();
+
+                Some((children, longer(gutter0, gutter1)))
+            }
+            (c, None) => c,
+            (None, c) => c,
+        };
+        let width = if let Some((gs, gutter)) = children.as_ref() {
+            gs.iter().map(|g| g.width).sum::<usize>() + total_gutter(gutter, gs.len())
+        } else {
+            max(w0, w1)
+        };
+        let anchor = match (a0, a1) {
+            (Some((idx0, trailing0)), Some((idx1, trailing1))) => {
+                Some((max(idx0, idx1), max(trailing0, trailing1)))
+            }
+            (a, None) => a,
+            (None, a) => a,
+        };
+
+        Graticule {
+            width,
+            anchor,
+            children,
+        }
+    }
+}
+
+fn total_gutter(column_gutter: &'static str, columns: usize) -> usize {
+    if columns > 0 {
+        (columns - 1) * column_gutter.width()
+    } else {
+        0
     }
 }
 
@@ -212,173 +361,11 @@ fn pad(n: usize) -> impl Display {
     })
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
-struct SingleColSpec {
-    width: Option<usize>,
-    anchor: Option<(usize, usize)>,
-}
-
-fn degenerate_anchor(width: Option<usize>) -> (usize, usize) {
-    (width.unwrap_or(0), 0)
-}
-
-impl SingleColSpec {
-    fn from_width(width: usize) -> Self {
-        Self {
-            width: Some(width),
-            anchor: None,
-        }
-    }
-
-    fn from_anchor(idx: usize, trailing: usize) -> Self {
-        Self {
-            width: None,
-            anchor: Some((idx, trailing)),
-        }
-    }
-
-    fn width(&self) -> usize {
-        max(
-            self.width.unwrap_or(0),
-            self.anchor
-                .map(|(idx, trailing)| idx + trailing)
-                .unwrap_or(0),
-        )
-    }
-
-    fn anchor(&self) -> (usize, usize) {
-        // anchor is expanded on the left to match the width
-        let width = self.width();
-        self.anchor
-            .map_or(degenerate_anchor(Some(width)), |(idx, trailing)| {
-                let expanded_idx = max(width, idx + trailing) - trailing;
-                (expanded_idx, trailing)
-            })
-    }
-
-    fn merge(self, other: SingleColSpec) -> Self {
-        let width = match (self.width, other.width) {
-            (Some(w0), Some(w1)) => Some(max(w0, w1)),
-            (w0, None) => w0,
-            (None, w1) => w1,
-        };
-
-        let anchor = match (self.anchor, other.anchor) {
-            (Some((idx0, trailing0)), Some((idx1, trailing1))) => {
-                Some((max(idx0, idx1), max(trailing0, trailing1)))
-            }
-            (a0, None) => a0,
-            (None, a1) => a1,
-        };
-
-        Self { width, anchor }
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Default)]
-enum ColSpec {
-    #[default]
-    Empty,
-    Simple(SingleColSpec),
-    Composite((Option<SingleColSpec>, Vec<ColSpec>, Gap)),
-}
-
-impl ColSpec {
-    fn merge(self, other: ColSpec) -> Self {
-        use itertools::EitherOrBoth::*;
-        use ColSpec::*;
-
-        match (self, other) {
-            (Empty, s) => s,
-            (s, Empty) => s,
-            (Simple(s0), Simple(s1)) => Simple(s0.merge(s1)),
-
-            (Composite((s0, c0, g0)), Composite((s1, c1, g1))) => {
-                let s = match (s0, s1) {
-                    (Some(s0), Some(s1)) => Some(s0.merge(s1)),
-                    (s0, None) => s0,
-                    (None, s1) => s1,
-                };
-                Composite((
-                    s,
-                    c0.into_iter()
-                        .zip_longest(c1)
-                        .map(|x| match x {
-                            Both(c0, c1) => c0.merge(c1),
-                            Left(c0) => c0,
-                            Right(c1) => c1,
-                        })
-                        .collect::<Vec<_>>(),
-                    max(g0, g1),
-                ))
-            }
-            (Simple(s0), Composite((None, c1, g1))) | (Composite((None, c1, g1)), Simple(s0)) => {
-                Composite((Some(s0), c1, g1))
-            }
-            (Simple(s0), Composite((Some(s1), c1, g1)))
-            | (Composite((Some(s1), c1, g1)), Simple(s0)) => {
-                Composite((Some(s0.merge(s1)), c1, g1))
-            }
-        }
-    }
-
-    // return total with, including the column separators
-    fn width(&self, styled: &Styled) -> usize {
-        use ColSpec::*;
-
-        match self {
-            Empty => 0,
-            Simple(s) => s.width(),
-            Composite((s, c, g)) => {
-                let column_separator_width = styled.width(*g);
-                let separator_widths = if c.is_empty() {
-                    0
-                } else {
-                    column_separator_width * (c.len() - 1)
-                };
-                max(
-                    s.as_ref().map_or(0, |s| s.width()),
-                    c.iter().map(|c| c.width(styled)).sum::<usize>() + separator_widths,
-                )
-            }
-        }
-    }
-
-    fn anchor(&self, styled: &Styled) -> (usize, usize) {
-        use ColSpec::*;
-
-        match self {
-            Empty => (0, 0),
-            Simple(s) => s.anchor(),
-            Composite((s, _c, _g)) => {
-                let width = self.width(styled);
-                s.as_ref()
-                    .map(|s| s.anchor())
-                    .unwrap_or_else(|| degenerate_anchor(Some(width)))
-            }
-        }
-    }
-}
-
-impl<'a> From<&Cell<'a>> for ColSpec {
-    fn from(value: &Cell<'a>) -> Self {
-        use Cell::*;
-        use ColSpec::*;
-
-        match value {
-            Aligned(s, _) => Simple(SingleColSpec::from_width(s.width())),
-            Anchored(s, idx) => {
-                let w = s.width();
-                Simple(SingleColSpec::from_anchor(*idx, w - idx))
-            }
-            Row(cells, g) => {
-                let cs = cells.iter().map(Into::<ColSpec>::into).collect::<Vec<_>>();
-                Composite((None, cs, *g))
-            }
-            Column(cells) => cells
-                .iter()
-                .fold(ColSpec::default(), |spec, cell| spec.merge(cell.into())),
-        }
+fn longer<'a>(s1: &'a str, s2: &'a str) -> &'a str {
+    if s1.width() >= s2.width() {
+        s1
+    } else {
+        s2
     }
 }
 
