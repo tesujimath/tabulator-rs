@@ -166,12 +166,6 @@ impl<'a> Display for Cell<'a> {
         let graticule: Graticule = self.into();
         let mut remaining: Remaining = self.into();
 
-        // TODO remove
-        println!(
-            "Cell {:?} into Graticule {:?}, Remaining {:?}",
-            self, &graticule, &remaining
-        );
-
         let mut first_line = true;
         while !remaining.is_empty() {
             if !first_line {
@@ -216,7 +210,7 @@ impl<'a> Remaining<'a> {
             }
 
             Anchored(s, idx) => {
-                let (layout_idx, layout_trailing) = g.anchor.unwrap(); // TODO don't think this can fail
+                let (layout_idx, layout_trailing) = g.anchor.unwrap(); // can't fail
                 let trailing = s.width() - idx;
                 let pad_l = layout_idx - idx;
                 let pad_r = layout_trailing - trailing;
