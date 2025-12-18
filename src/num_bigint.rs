@@ -1,14 +1,14 @@
 use crate::{conversions::anchor_units, Cell};
 use num_bigint::{BigInt, BigUint};
 
-impl From<&BigUint> for Cell<'static> {
+impl<'g> From<&BigUint> for Cell<'static, 'g> {
     // anchor the decimal at the units digit, so will align with e.g. integers
     fn from(value: &BigUint) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<&BigInt> for Cell<'static> {
+impl<'g> From<&BigInt> for Cell<'static, 'g> {
     // anchor the decimal at the units digit, so will align with e.g. integers
     fn from(value: &BigInt) -> Self {
         anchor_units(value.to_string())

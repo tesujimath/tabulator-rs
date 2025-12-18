@@ -28,6 +28,7 @@ Optional features are:
 
 - `rust_decimal` - adds a dependency on that crate and `From::<Decimal>` for `Cell`
 - `num-bigint` - adds a dependency on that crate and `From::<BigInt>` and `From::<BigUint>` for `Cell`
+- `json` - adds `Cell::from_json(s: &str)`
 
 ## License
 

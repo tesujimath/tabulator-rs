@@ -1,83 +1,83 @@
 use super::Cell;
 
-pub(crate) fn anchor_units(s: String) -> Cell<'static> {
+pub(crate) fn anchor_units<'g>(s: String) -> Cell<'static, 'g> {
     let idx = s.len() - 1;
     Cell::anchored(s, idx)
 }
 
-impl From<i8> for Cell<'static> {
+impl<'g> From<i8> for Cell<'static, 'g> {
     fn from(value: i8) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<i16> for Cell<'static> {
+impl<'g> From<i16> for Cell<'static, 'g> {
     fn from(value: i16) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<i32> for Cell<'static> {
+impl<'g> From<i32> for Cell<'static, 'g> {
     fn from(value: i32) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<i64> for Cell<'static> {
+impl<'g> From<i64> for Cell<'static, 'g> {
     fn from(value: i64) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<i128> for Cell<'static> {
+impl<'g> From<i128> for Cell<'static, 'g> {
     fn from(value: i128) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<isize> for Cell<'static> {
+impl<'g> From<isize> for Cell<'static, 'g> {
     fn from(value: isize) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<u8> for Cell<'static> {
+impl<'g> From<u8> for Cell<'static, 'g> {
     fn from(value: u8) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<u16> for Cell<'static> {
+impl<'g> From<u16> for Cell<'static, 'g> {
     fn from(value: u16) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<u32> for Cell<'static> {
+impl<'g> From<u32> for Cell<'static, 'g> {
     fn from(value: u32) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<u64> for Cell<'static> {
+impl<'g> From<u64> for Cell<'static, 'g> {
     fn from(value: u64) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<u128> for Cell<'static> {
+impl<'g> From<u128> for Cell<'static, 'g> {
     fn from(value: u128) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-impl From<usize> for Cell<'static> {
+impl<'g> From<usize> for Cell<'static, 'g> {
     fn from(value: usize) -> Self {
         anchor_units(value.to_string())
     }
 }
 
-fn anchor_decimal(s: String) -> Cell<'static> {
+fn anchor_decimal<'g>(s: String) -> Cell<'static, 'g> {
     let idx = s
         .find('.')
         .map(|idx| idx - 1)
@@ -85,13 +85,13 @@ fn anchor_decimal(s: String) -> Cell<'static> {
     Cell::anchored(s, idx)
 }
 
-impl From<f32> for Cell<'static> {
+impl<'g> From<f32> for Cell<'static, 'g> {
     fn from(value: f32) -> Self {
         anchor_decimal(value.to_string())
     }
 }
 
-impl From<f64> for Cell<'static> {
+impl<'g> From<f64> for Cell<'static, 'g> {
     fn from(value: f64) -> Self {
         anchor_decimal(value.to_string())
     }

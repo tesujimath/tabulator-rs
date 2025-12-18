@@ -1,7 +1,7 @@
 use crate::Cell;
 use rust_decimal::Decimal;
 
-impl<'a> From<Decimal> for Cell<'a> {
+impl<'a, 'g> From<Decimal> for Cell<'a, 'g> {
     // anchor the decimal at the units digit, so will align with e.g. integers
     fn from(value: Decimal) -> Self {
         let sign_width = if value.is_sign_negative() { 1u32 } else { 0 };

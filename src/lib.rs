@@ -26,7 +26,12 @@ use lazy_format::make_lazy_format;
 use std::{borrow::Cow, cmp::max, collections::VecDeque, fmt::Display};
 use unicode_width::UnicodeWidthStr;
 
+#[cfg(feature = "json")]
+use serde::{Deserialize, Serialize};
+
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "json", serde(rename_all = "lowercase"))]
 pub enum Align {
     Left,
     Right,
@@ -34,16 +39,16 @@ pub enum Align {
 }
 
 #[derive(Default, Debug)]
-pub enum Cell<'a> {
+pub enum Cell<'a, 'g> {
     #[default]
     Empty,
     Aligned(Cow<'a, str>, Align),
     Anchored(Cow<'a, str>, usize), // index of character which is anchored, e.g. the decimal point
-    Row(Vec<Cell<'a>>, &'static str), // horizontal sequence with gutter
-    Stack(Vec<Cell<'a>>),          // vertical stack
+    Row(Vec<Cell<'a, 'g>>, &'g str), // horizontal sequence with gutter
+    Stack(Vec<Cell<'a, 'g>>),      // vertical stack
 }
 
-impl<'a, S> From<(S, Align)> for Cell<'a>
+impl<'a, 'g, S> From<(S, Align)> for Cell<'a, 'g>
 where
     S: Into<Cow<'a, str>>,
 {
@@ -52,7 +57,7 @@ where
     }
 }
 
-impl<'a> Cell<'a> {
+impl<'a, 'g> Cell<'a, 'g> {
     /// Return the string anchored at position `idx`.
     pub fn anchored<S>(s: S, idx: usize) -> Self
     where
@@ -63,10 +68,10 @@ impl<'a> Cell<'a> {
 }
 
 #[derive(Clone, Debug)]
-struct Graticule {
+struct Graticule<'g> {
     width: usize,
-    anchor: Option<(usize, usize)>,                   // idx, trailing
-    children: Option<(Vec<Graticule>, &'static str)>, // horizontal sequence with gutter
+    anchor: Option<(usize, usize)>,                  // idx, trailing
+    children: Option<(Vec<Graticule<'g>>, &'g str)>, // horizontal sequence with gutter
 }
 
 #[derive(Clone, Debug)]
@@ -78,8 +83,8 @@ enum Remaining<'a> {
     Stack(VecDeque<Remaining<'a>>), // vertical stack
 }
 
-impl From<&Cell<'_>> for Graticule {
-    fn from(value: &Cell<'_>) -> Self {
+impl<'g> From<&Cell<'_, 'g>> for Graticule<'g> {
+    fn from(value: &Cell<'_, 'g>) -> Self {
         use Cell::*;
 
         match value {
@@ -126,11 +131,11 @@ impl From<&Cell<'_>> for Graticule {
     }
 }
 
-impl<'a, 'c> From<&'c Cell<'a>> for Remaining<'a>
+impl<'a, 'g, 'c> From<&'c Cell<'a, 'g>> for Remaining<'a>
 where
     'c: 'a,
 {
-    fn from(value: &'c Cell<'a>) -> Self {
+    fn from(value: &'c Cell<'a, 'g>) -> Self {
         use Cell::*;
 
         match value {
@@ -161,7 +166,7 @@ where
     }
 }
 
-impl<'a> Display for Cell<'a> {
+impl<'a, 'g> Display for Cell<'a, 'g> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let graticule: Graticule = self.into();
         let mut remaining: Remaining = self.into();
@@ -277,8 +282,8 @@ impl<'a> Remaining<'a> {
     }
 }
 
-impl Graticule {
-    fn empty() -> Graticule {
+impl<'g> Graticule<'g> {
+    fn empty() -> Graticule<'g> {
         Graticule {
             width: 0,
             anchor: None,
@@ -286,7 +291,7 @@ impl Graticule {
         }
     }
 
-    fn merge(self: Graticule, other: Graticule) -> Graticule {
+    fn merge(self: Graticule<'g>, other: Graticule<'g>) -> Graticule<'g> {
         let Graticule {
             width: w0,
             anchor: a0,
@@ -338,7 +343,7 @@ impl Graticule {
     }
 }
 
-fn total_gutter(column_gutter: &'static str, columns: usize) -> usize {
+fn total_gutter(column_gutter: &str, columns: usize) -> usize {
     if columns > 0 {
         (columns - 1) * column_gutter.width()
     } else {
@@ -364,6 +369,8 @@ fn longer<'a>(s1: &'a str, s2: &'a str) -> &'a str {
 }
 
 mod conversions;
+#[cfg(feature = "json")]
+mod json;
 #[cfg(feature = "num-bigint")]
 mod num_bigint;
 #[cfg(feature = "rust_decimal")]
