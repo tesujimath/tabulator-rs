@@ -373,5 +373,7 @@ mod conversions;
 mod json;
 #[cfg(feature = "num-bigint")]
 mod num_bigint;
+#[cfg(feature = "psv")]
+mod psv;
 #[cfg(feature = "rust_decimal")]
 mod rust_decimal;

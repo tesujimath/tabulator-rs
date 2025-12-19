@@ -11,9 +11,10 @@ readme = "README.md"
 [[bin]]
 name = "tabulator"
 path = "src/main.rs"
-required-features = ["json"]
+required-features = ["bin"]
 
 [dependencies]
+clap = { version = "4.5.42", features = ["derive"], optional = true }
 itertools = "0.14.0"
 joinery = "3.1.0"
 lazy_format = "2.0.3"
@@ -25,6 +26,9 @@ test-case = "3.3.1"
 unicode-width = "0.2.1"
 
 [features]
+bin = ["clap", "json", "psv"]
+clap = ["dep:clap"]
 rust_decimal = ["dep:rust_decimal"]
 num-bigint = ["dep:num-bigint"]
 json = ["dep:serde", "dep:serde_json"]
+psv = []

@@ -36,11 +36,11 @@
             gcc
           ];
 
-          tabulator-rs =
+          tabulator =
             let cargo = builtins.fromTOML (builtins.readFile ./Cargo.toml);
             in pkgs.rustPlatform.buildRustPackage
               {
-                pname = "tabulator-rs";
+                pname = "tabulator";
                 version = cargo.package.version;
 
                 src = ./.;
@@ -49,9 +49,11 @@
                   lockFile = ./Cargo.lock;
                 };
 
+                cargoBuildFlags = [ "--features=bin" ];
+
                 meta = with pkgs.lib; {
-                  description = "Beancount frontend using Steel Scheme and Lima parser";
-                  homepage = "https://github.com/tesujimath/beancount-lima";
+                  description = "Grid-oriented tabulation with justification and anchors";
+                  homepage = "https://github.com/tesujimath/tabulator";
                   license = with licenses; [ asl20 mit ];
                   # maintainers = [ maintainers.tesujimath ];
                 };
@@ -74,13 +76,13 @@
             '';
           };
 
-          packages.default = tabulator-rs;
+          packages.default = tabulator;
 
           apps = {
             tests = {
               type = "app";
-              program = "${writeShellScript "tabulator-rs-tests" ''
-                export PATH=${pkgs.lib.makeBinPath (ci-packages ++ [tabulator-rs])}
+              program = "${writeShellScript "tabulator-tests" ''
+                export PATH=${pkgs.lib.makeBinPath (ci-packages ++ [tabulator])}
                 just test
               ''}";
             };
