@@ -28,7 +28,7 @@ Assets:Bank:Investment   2.25 NZD   Skint
 
 - JSON - all tabulation features available, with flexible alignment options and nesting of cells
 - PSV - pipe separated values, with leading/trailing whitespace stripped, and lines split on pipe
-- PSVF - framed pipe separated values, with leading/trailing whitespace stripped, each line requiring to begin and end with pipe, and lines split on pipe
+- PSVF - framed pipe separated values, with leading/trailing whitespace stripped, after which each line is required to begin and end with pipe, and lines split on pipe
 
 ### Example
 
