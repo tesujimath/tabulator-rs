@@ -4,7 +4,7 @@ This is grid-style tabulation for left/right/centre justification of strings and
 
 It is available both as a Rust crate and a command line program, `tabulator`.
 
-The motivation to build such a thing is [Beancount Lima](https://github.com/tesujimath/beancount-lima).
+The motivation to build such a thing is [limabean](https://github.com/tesujimath/limabean), a new implementation of Beancount in Rust and Clojure.
 
 ## Example Output
 
